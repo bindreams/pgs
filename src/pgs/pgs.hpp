@@ -19,11 +19,7 @@ struct PgsReadError : public std::runtime_error {
 	using std::runtime_error::runtime_error;
 };
 
-struct PresentationComposition;
-struct WindowDefinition;
-struct PaletteDefinition;
-struct ObjectDefinition;
-struct EndOfDisplaySet;
+struct Segment;
 
 struct SegmentHeader {
 	Timestamp presentation_ts;
@@ -36,61 +32,9 @@ struct SegmentHeader {
 		EndOfDisplaySet = 0x80,
 
 	} type;
-	// uint16_t size;
 };
 
-struct Segment : SegmentHeader {
-	template<std::derived_from<Segment> T>
-	T const& as() const {
-		assert(dynamic_cast<T const*>(this) != nullptr);  // casting failed (wrong type)
-		assert(dynamic_cast<T const*>(this) == this);     // derived type address is offset from base
-		return *static_cast<T const*>(this);
-	}
-
-	template<std::derived_from<Segment> T>
-	T& as() {
-		return const_cast<T&>(std::as_const(*this).as<T>());
-	}
-
-	// template<typename F>
-	// decltype(auto) visit(F&& callable) const {
-	// 	switch (type) {
-	// 		case Type::PaletteDefinition:
-	// 			return callable(static_cast<PaletteDefinition const&>(*this));
-	// 		case Type::ObjectDefinition:
-	// 			return callable(static_cast<ObjectDefinition const&>(*this));
-	// 		case Type::PresentationComposition:
-	// 			return callable(static_cast<PresentationComposition const&>(*this));
-	// 		case Type::WindowDefinition:
-	// 			return callable(static_cast<WindowDefinition const&>(*this));
-	// 		case Type::EndOfDisplaySet:
-	// 			return callable(static_cast<EndOfDisplaySet const&>(*this));
-	// 		default:
-	// 			assert(false);  // Unhandled Segment::Type
-	// 			unreachable();
-	// 	}
-	// }
-
-	// template<typename F>
-	// decltype(auto) visit(F&& callable) {
-	// 	return std::as_const(*this).visit([&callable](auto& self) {
-	// 		return callable(const_cast<std::remove_const_t<decltype(self)>>);
-	// 	});
-	// }
-
-	uint16_t size_bytes() const {
-		auto result = size_bytes_impl();
-		assert(result <= std::numeric_limits<uint16_t>::max());
-		return static_cast<uint16_t>(result);
-	}
-
-	virtual ~Segment() = default;
-
-protected:
-	virtual size_t size_bytes_impl() const = 0;
-};
-
-struct PresentationComposition : Segment {
+struct PresentationComposition : SegmentHeader {
 	uint16_t width;
 	uint16_t height;
 	uint8_t framerate;
@@ -128,10 +72,12 @@ struct PresentationComposition : Segment {
 
 	std::vector<CompositionObject> composition_objects;
 
-	static std::unique_ptr<PresentationComposition> load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
 
-protected:
-	size_t size_bytes_impl() const override {
+private:
+	friend struct Segment;
+
+	size_t size_bytes_impl() const {
 		constexpr const uint16_t main_size = 11;
 		constexpr const uint16_t object_size = 16;
 		return main_size + (object_size * composition_objects.size());
@@ -172,10 +118,320 @@ struct serialize::meta<PresentationComposition::CompositionObject> {
 	}
 };
 
-std::unique_ptr<PresentationComposition>
-PresentationComposition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	auto result = std::make_unique<PresentationComposition>();
-	auto& obj = *result;
+struct WindowDefinition : SegmentHeader {
+	struct Window {
+		uint8_t id;
+		uint16_t x;
+		uint16_t y;
+		uint16_t width;
+		uint16_t height;
+	};
+
+	std::vector<Window> windows;
+
+	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+
+private:
+	friend struct Segment;
+
+	size_t size_bytes_impl() const {
+		constexpr const uint16_t main_size = 1;
+		constexpr const uint16_t window_size = 9;
+		return main_size + (window_size * windows.size());
+	}
+};
+
+template<>
+struct serialize::meta<WindowDefinition::Window> {
+	static constexpr auto proxy = [](auto&& window) {
+		return std::tie(window.id, window.x, window.y, window.width, window.height);
+	};
+};
+
+struct PaletteDefinition : SegmentHeader {
+	uint8_t id;
+	uint8_t version;
+
+	struct Entry {
+		uint8_t id;
+		uint8_t y;      /// Luminance
+		uint8_t cr;     /// Color Difference Red
+		uint8_t cb;     /// Color Difference Blue
+		uint8_t alpha;  /// Transparency
+	};
+
+	std::vector<Entry> entries;
+
+	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+
+private:
+	friend struct Segment;
+	size_t size_bytes_impl() const {
+		constexpr const uint16_t main_size = 2;
+		constexpr const uint16_t entry_size = 5;
+		return main_size + (entry_size * entries.size());
+	}
+};
+
+template<>
+struct serialize::meta<PaletteDefinition::Entry> {
+	static constexpr auto proxy = [](auto& val) { return std::tie(val.id, val.y, val.cr, val.cb, val.alpha); };
+};
+
+struct ObjectDefinition : SegmentHeader {
+	uint16_t id;
+	uint8_t version;
+	enum class SequenceFlag : uint8_t {
+		None = 0x0,
+		Last = 0x40,
+		First = 0x80,
+	} sequence_flag;
+	// uint48_t object_size;
+	uint16_t width;
+	uint16_t height;
+	std::vector<uint8_t> data;
+
+	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+
+private:
+	friend struct Segment;
+
+	size_t size_bytes_impl() const {
+		constexpr const uint16_t main_size = 11;
+		return main_size + data.size();
+	}
+};
+
+struct EndOfDisplaySet : SegmentHeader {
+	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+
+private:
+	friend struct Segment;
+
+	size_t size_bytes_impl() const { return 0; }
+};
+
+struct PresentationComposition;
+struct WindowDefinition;
+struct PaletteDefinition;
+struct ObjectDefinition;
+struct EndOfDisplaySet;
+
+template<typename T, typename... U>
+concept OneOf = (std::same_as<T, U> or ...);
+
+template<typename T>
+concept OneOfSegmentTypes =
+	OneOf<T, PresentationComposition, WindowDefinition, PaletteDefinition, ObjectDefinition, EndOfDisplaySet>;
+
+struct Segment {
+	static_assert(std::derived_from<PresentationComposition, SegmentHeader>);
+	static_assert(std::derived_from<WindowDefinition, SegmentHeader>);
+	static_assert(std::derived_from<PaletteDefinition, SegmentHeader>);
+	static_assert(std::derived_from<ObjectDefinition, SegmentHeader>);
+	static_assert(std::derived_from<EndOfDisplaySet, SegmentHeader>);
+
+	template<typename T>
+		requires OneOfSegmentTypes<T> or std::same_as<T, SegmentHeader>
+	T const& as() const {
+		if constexpr (std::same_as<T, SegmentHeader>) {
+			return static_cast<SegmentHeader const&>(*this);
+		} else {
+			if (header.type != T::StaticType) throw std::bad_variant_access{};
+			return const_cast<Segment&>(*this).unsafe_as<T>();
+		}
+	}
+
+	template<typename T>
+		requires OneOfSegmentTypes<T> or std::same_as<T, SegmentHeader>
+	T& as() {
+		return const_cast<T&>(std::as_const(*this).as<T>());
+	}
+
+	template<typename F>
+	decltype(auto) visit(F&& callable) const {
+		// After asserting that each class in union was derived from SegmentHeader, we can use type punning to check
+		// the header type and then use the actual stored value.
+		// An additional assert in each branch checks that the actual SegmentHeader base subobject had the same address,
+		// i.e. SegmentHeader was the FIRST base in memory layout.
+		// Type punning is undefined behavior, but I can't do it any other way without introducing overhead.
+		switch (header.type) {
+			case SegmentHeader::Type::PresentationComposition:
+				assert(static_cast<SegmentHeader const*>(&pcs) == &pcs);
+				return callable(pcs);
+			case SegmentHeader::Type::WindowDefinition:
+				assert(static_cast<SegmentHeader const*>(&wds) == &wds);
+				return callable(wds);
+			case SegmentHeader::Type::PaletteDefinition:
+				assert(static_cast<SegmentHeader const*>(&pds) == &pds);
+				return callable(pds);
+			case SegmentHeader::Type::ObjectDefinition:
+				assert(static_cast<SegmentHeader const*>(&ods) == &ods);
+				return callable(ods);
+			case SegmentHeader::Type::EndOfDisplaySet:
+				assert(static_cast<SegmentHeader const*>(&eods) == &eods);
+				return callable(eods);
+			default:
+				assert(false);  // unhandled segment type
+				std::unreachable();
+		}
+	}
+
+	template<typename F>
+	decltype(auto) visit(F&& callable) {
+		return std::as_const(*this).visit([&](auto& self) -> decltype(auto) {
+			return callable(const_cast<std::remove_const_t<decltype(self)>>(self));
+		});
+	}
+
+	uint16_t size_bytes() const {
+		auto result = visit([](auto& self) { return self.size_bytes_impl(); });
+		assert(result <= std::numeric_limits<uint16_t>::max());
+		return static_cast<uint16_t>(result);
+	}
+
+	operator SegmentHeader&() { return header; }
+	operator SegmentHeader const&() const { return header; }
+
+	Segment() : Segment(EndOfDisplaySet{}) {}
+
+	template<OneOfSegmentTypes T>
+	explicit Segment(T const& segment) {
+		std::construct_at(&as<T>(), segment);
+	}
+
+	template<OneOfSegmentTypes T>
+	explicit Segment(T&& segment) {
+		std::construct_at(&as<T>(), std::move(segment));
+	}
+
+	Segment(Segment const& other) {
+		other.visit([&](auto& other_self) {
+			std::construct_at(&as<std::remove_cvref_t<decltype(other_self)>>(), other_self);
+		});
+	}
+
+	Segment(Segment&& other) {
+		other.visit([&](auto& other_self) {
+			std::construct_at(&as<std::remove_cvref_t<decltype(other_self)>>(), std::move(other_self));
+		});
+	}
+
+	Segment& operator=(Segment const& other) {
+		visit([](auto& self) { std::destroy_at(&self); });
+		other.visit([&](auto& other_self) {
+			std::construct_at(&as<std::remove_cvref_t<decltype(other_self)>>(), other_self);
+		});
+	}
+
+	Segment& operator=(Segment&& other) {
+		visit([](auto& self) { std::destroy_at(&self); });
+		other.visit([&](auto& other_self) {
+			std::construct_at(&as<std::remove_cvref_t<decltype(other_self)>>(), std::move(other_self));
+		});
+	}
+
+	~Segment() {
+		visit([](auto& self) { std::destroy_at(&self); });
+	}
+
+	template<OneOfSegmentTypes T, typename... Ts>
+	static Segment make(Ts&&... args) {
+		return Segment(ConstructTag<T>{}, std::forward<Ts>(args)...);
+	}
+
+private:
+	template<OneOfSegmentTypes T>
+	struct ConstructTag {
+		using Type = T;
+	};
+
+	template<typename Tag, typename... Ts>
+	explicit Segment(Tag tag, Ts&&... args) {
+		std::construct_at(&as<Tag::Type>(), std::forward<Ts>(args)...);
+	}
+
+	template<OneOfSegmentTypes T>
+	T& unsafe_as() {
+		if constexpr (std::same_as<T, PresentationComposition>) return pcs;
+		else if constexpr (std::same_as<T, WindowDefinition>) return wds;
+		else if constexpr (std::same_as<T, PaletteDefinition>) return pds;
+		else if constexpr (std::same_as<T, ObjectDefinition>) return ods;
+		else if constexpr (std::same_as<T, EndOfDisplaySet>) return eods;
+		else static_assert(false);
+	}
+
+	union {
+		SegmentHeader header;
+		PresentationComposition pcs;
+		WindowDefinition wds;
+		PaletteDefinition pds;
+		ObjectDefinition ods;
+		EndOfDisplaySet eods;
+	};
+};
+
+struct serialize::meta<Segment> {
+	void load(std::istream& is, Segment& value, std::endian endianness) {
+		char magic_bytes[2] = {};
+		SegmentHeader header = {};
+		uint16_t segment_size = 0;
+
+		std::streamoff pos = is.tellg();
+		serialize::load(
+			is, std::tie(magic_bytes, header.presentation_ts, header.decoding_ts, header.type, segment_size)
+		);
+
+		std::string_view magic{magic_bytes, 2};
+		if (magic != "PG") {
+			throw PgsReadError(std::format(
+				"failed to read segment header at tellg() == {}: got {:#x} {:#x} instead of magic {:#x} {:#x} (\"PG\")",
+				pos,
+				magic_bytes[0],
+				magic_bytes[1],
+				'P',
+				'G'
+			));
+		}
+
+		std::vector<uint8_t> body;
+		pos = is.tellg();
+		try {
+			body = serialize::read_bytes(is, segment_size);
+		} catch (std::runtime_error const& err) {
+			throw PgsReadError(std::format(
+				"failed to read {} bytes of a segment body, starting at tellg() == {}: {}",
+				segment_size,
+				pos,
+				err.what()
+			));
+		}
+
+		switch (header.type) {
+			case SegmentHeader::Type::PaletteDefinition:
+				value = PaletteDefinition::load(header, body);
+				break;
+			case SegmentHeader::Type::ObjectDefinition:
+				value = ObjectDefinition::load(header, body);
+				break;
+			case SegmentHeader::Type::PresentationComposition:
+				value = PresentationComposition::load(header, body);
+				break;
+			case SegmentHeader::Type::WindowDefinition:
+				value = WindowDefinition::load(header, body);
+				break;
+			case SegmentHeader::Type::EndOfDisplaySet:
+				value = EndOfDisplaySet::load(header, body);
+				break;
+			default:
+				throw PgsReadError(std::format("unrecognized segment type {:#x}", std::to_underlying(header.type)));
+		}
+	}
+};
+
+Segment PresentationComposition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+	Segment result = Segment::make<PresentationComposition>();
+	auto& obj = result.as<PresentationComposition>();
 	static_cast<SegmentHeader&>(obj) = header;
 
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
@@ -201,37 +457,9 @@ PresentationComposition::load(SegmentHeader const& header, std::span<uint8_t con
 	return result;
 }
 
-struct WindowDefinition : Segment {
-	struct Window {
-		uint8_t id;
-		uint16_t x;
-		uint16_t y;
-		uint16_t width;
-		uint16_t height;
-	};
-
-	std::vector<Window> windows;
-
-	static std::unique_ptr<WindowDefinition> load(SegmentHeader const& header, std::span<uint8_t const> bytes);
-
-protected:
-	size_t size_bytes_impl() const override {
-		constexpr const uint16_t main_size = 1;
-		constexpr const uint16_t window_size = 9;
-		return main_size + (window_size * windows.size());
-	}
-};
-
-template<>
-struct serialize::meta<WindowDefinition::Window> {
-	static constexpr auto proxy = [](auto&& window) {
-		return std::tie(window.id, window.x, window.y, window.width, window.height);
-	};
-};
-
-std::unique_ptr<WindowDefinition> WindowDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	auto result = std::make_unique<WindowDefinition>();
-	auto& obj = *result;
+Segment WindowDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+	Segment result = Segment::make<WindowDefinition>();
+	auto& obj = result.as<WindowDefinition>();
 	static_cast<SegmentHeader&>(obj) = header;
 
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
@@ -243,39 +471,9 @@ std::unique_ptr<WindowDefinition> WindowDefinition::load(SegmentHeader const& he
 	return result;
 }
 
-struct PaletteDefinition : Segment {
-	uint8_t id;
-	uint8_t version;
-
-	struct Entry {
-		uint8_t id;
-		uint8_t y;      /// Luminance
-		uint8_t cr;     /// Color Difference Red
-		uint8_t cb;     /// Color Difference Blue
-		uint8_t alpha;  /// Transparency
-	};
-
-	std::vector<Entry> entries;
-
-	static std::unique_ptr<PaletteDefinition> load(SegmentHeader const& header, std::span<uint8_t const> bytes);
-
-protected:
-	size_t size_bytes_impl() const override {
-		constexpr const uint16_t main_size = 2;
-		constexpr const uint16_t entry_size = 5;
-		return main_size + (entry_size * entries.size());
-	}
-};
-
-template<>
-struct serialize::meta<PaletteDefinition::Entry> {
-	static constexpr auto proxy = [](auto& val) { return std::tie(val.id, val.y, val.cr, val.cb, val.alpha); };
-};
-
-std::unique_ptr<PaletteDefinition>
-PaletteDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	auto result = std::make_unique<PaletteDefinition>();
-	auto& obj = *result;
+Segment PaletteDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+	Segment result = Segment::make<PaletteDefinition>();
+	auto& obj = result.as<PaletteDefinition>();
 	static_cast<SegmentHeader&>(obj) = header;
 
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
@@ -289,31 +487,9 @@ PaletteDefinition::load(SegmentHeader const& header, std::span<uint8_t const> by
 	return result;
 }
 
-struct ObjectDefinition : Segment {
-	uint16_t id;
-	uint8_t version;
-	enum class SequenceFlag : uint8_t {
-		None = 0x0,
-		Last = 0x40,
-		First = 0x80,
-	} sequence_flag;
-	// uint48_t object_size;
-	uint16_t width;
-	uint16_t height;
-	std::vector<uint8_t> data;
-
-	static std::unique_ptr<ObjectDefinition> load(SegmentHeader const& header, std::span<uint8_t const> bytes);
-
-protected:
-	size_t size_bytes_impl() const override {
-		constexpr const uint16_t main_size = 11;
-		return main_size + data.size();
-	}
-};
-
-std::unique_ptr<ObjectDefinition> ObjectDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	auto result = std::make_unique<ObjectDefinition>();
-	auto& obj = *result;
+Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+	Segment result = Segment::make<ObjectDefinition>();
+	auto& obj = result.as<ObjectDefinition>();
 	static_cast<SegmentHeader&>(obj) = header;
 
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
@@ -341,65 +517,12 @@ std::unique_ptr<ObjectDefinition> ObjectDefinition::load(SegmentHeader const& he
 	return result;
 }
 
-struct EndOfDisplaySet : Segment {
-	static std::unique_ptr<EndOfDisplaySet> load(SegmentHeader const& header, std::span<uint8_t const> bytes);
-
-protected:
-	size_t size_bytes_impl() const override { return 0; }
-};
-
-std::unique_ptr<EndOfDisplaySet> EndOfDisplaySet::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	auto result = std::make_unique<EndOfDisplaySet>();
-	auto& obj = *result;
+Segment EndOfDisplaySet::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+	Segment result = Segment::make<EndOfDisplaySet>();
+	auto& obj = result.as<EndOfDisplaySet>();
 	static_cast<SegmentHeader&>(obj) = header;
 
 	assert(bytes.size() == 0);
 	(void)bytes;
 	return result;
-}
-
-std::unique_ptr<Segment> load(std::istream& is) {
-	char magic_bytes[2] = {};
-	SegmentHeader header = {};
-	uint16_t segment_size = 0;
-
-	std::streamoff pos = is.tellg();
-	serialize::load(is, std::tie(magic_bytes, header.presentation_ts, header.decoding_ts, header.type, segment_size));
-
-	std::string_view magic{magic_bytes, 2};
-	if (magic != "PG") {
-		throw PgsReadError(std::format(
-			"failed to read segment header at tellg() == {}: got {:#x} {:#x} instead of magic {:#x} {:#x} (\"PG\")",
-			pos,
-			magic_bytes[0],
-			magic_bytes[1],
-			'P',
-			'G'
-		));
-	}
-
-	std::vector<uint8_t> body;
-	pos = is.tellg();
-	try {
-		body = serialize::read_bytes(is, segment_size);
-	} catch (std::runtime_error const& err) {
-		throw PgsReadError(std::format(
-			"failed to read {} bytes of a segment body, starting at tellg() == {}: {}", segment_size, pos, err.what()
-		));
-	}
-
-	switch (header.type) {
-		case Segment::Type::PaletteDefinition:
-			return PaletteDefinition::load(header, body);
-		case Segment::Type::ObjectDefinition:
-			return ObjectDefinition::load(header, body);
-		case Segment::Type::PresentationComposition:
-			return PresentationComposition::load(header, body);
-		case Segment::Type::WindowDefinition:
-			return WindowDefinition::load(header, body);
-		case Segment::Type::EndOfDisplaySet:
-			return EndOfDisplaySet::load(header, body);
-		default:
-			throw PgsReadError(std::format("unrecognized segment type {:#x}", std::to_underlying(header.type)));
-	}
 }
