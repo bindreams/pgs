@@ -185,12 +185,13 @@ using ProxyType = std::remove_cvref_t<decltype(meta<T>::proxy(std::declval<T&>()
 
 template<HasMeta T>
 consteval bool _has_proxy_or_size_bytes() {
-	if constexpr (HasProxyMeta<T>)
+	if constexpr (HasProxyMeta<T>) {
 		return _has_proxy_or_size_bytes<ProxyType<T>>();
-	else
+	} else {
 		return requires {
 			{ meta<T>::SizeBytes };
 		};
+	}
 }
 
 template<typename T>
@@ -198,10 +199,8 @@ concept ConstantSizeMeta = HasMeta<T> and _has_proxy_or_size_bytes<T>();
 
 template<ConstantSizeMeta T>
 constexpr size_t SizeBytes = [] consteval {
-	if constexpr (HasProxyMeta<T>)
-		return SizeBytes<ProxyType<T>>;
-	else
-		return meta<T>::SizeBytes;
+	if constexpr (HasProxyMeta<T>) return SizeBytes<ProxyType<T>>;
+	else return meta<T>::SizeBytes;
 }();
 
 template<HasMeta T, InputStream S>
@@ -209,7 +208,6 @@ constexpr void load(S& stream, T&& value, std::endian endianness = std::endian::
 	if constexpr (HasProxyMeta<T>) {
 		load(stream, meta<T>::proxy(value), endianness);
 	} else if constexpr (ConstantSizeMeta<T>) {
-		static_assert(ConstantSizeMeta<T>);
 		auto bytes = read_bytes<meta<T>::SizeBytes>(stream);
 		meta<T>::loads(std::span{bytes}, value, endianness);
 	} else {
@@ -462,12 +460,13 @@ struct meta<T> {
 
 template<typename T>
 concept TupleLike = requires(T value) {
-	{ std::tuple_size_v<T> };
-	typename std::tuple_element_t<0, T>;
+	{ std::tuple_size<T>{} };
+	typename std::tuple_element<0, T>;
 	{ std::get<0>(value) };
 };
 
 static_assert(TupleLike<std::tuple<int>>);
+static_assert(not TupleLike<int>);
 
 template<size_t I = 0, typename T, typename F>
 	requires TupleLike<std::remove_cvref_t<T>>
@@ -586,35 +585,41 @@ auto resized(T& value) {
 
 template<size_t N, typename T>
 struct meta<Resized<N, T>> {
+	using type = std::remove_const_t<T>;
 	static constexpr const size_t SizeBytes = N;
 
 	static constexpr void loads(std::span<uint8_t const> bytes, Resized<N, T>& value, std::endian endianness) {
 		assert(bytes.size() == SizeBytes);
+		auto& value_ = value.get();
 
 		// Copy source data to a mutable buffer
-		std::array<uint8_t, std::max(sizeof(T), SizeBytes)> buffer = {};
-		uint8_t& highest_byte = buffer[endianness == std::endian::big ? 0 : N - 1];
+		std::array<uint8_t, std::max(sizeof(T), N)> buffer = {};
+		std::span<uint8_t> actual_data;
 		std::span<uint8_t> to_load;
 		std::span<uint8_t> to_discard;
+		uint8_t* highest_byte = nullptr;
 
 		if (endianness == std::endian::big) {
-			std::ranges::copy(bytes, buffer.data() + buffer.size() - SizeBytes);
+			actual_data = std::span{buffer}.subspan(buffer.size() - N, N);
+			highest_byte = &actual_data[0];
 
 			to_load = std::span{buffer}.subspan(buffer.size() - sizeof(T), sizeof(T));
 			to_discard = std::span{buffer}.subspan(0, buffer.size() - sizeof(T));
 		} else {
-			std::ranges::copy(bytes, buffer.data());
+			actual_data = std::span{buffer}.subspan(0, N);
+			highest_byte = &actual_data[N - 1];
 
 			to_load = std::span{buffer}.subspan(0, sizeof(T));
 			to_discard = std::span{buffer}.subspan(sizeof(T), buffer.size() - sizeof(T));
 		}
+		std::ranges::copy(bytes, actual_data.data());
 
 		// Remove and save sign bit from data (it's in the wrong place for auto loading)
 		bool negative = false;
 		if constexpr (std::signed_integral<T>) {
 			// detect and reset sign bit to 0 (for loading as unsigned later)
-			negative = highest_byte & 0b10000000;
-			highest_byte &= 0b01111111;
+			negative = *highest_byte & 0b10000000;
+			*highest_byte &= 0b01111111;
 		}
 
 		// If there are bytes to discard (SizeBytes > sizeof(T)), check that no data will be lost
@@ -624,23 +629,58 @@ struct meta<Resized<N, T>> {
 			}
 		}
 
-		serialize::loads(to_load, value.get(), endianness);
-		if (negative) value.get() = -value.get();
+		serialize::loads(to_load, value_, endianness);
+		if (negative) value_ |= std::numeric_limits<type>::min();  // add sign bit
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, Resized<N, T> value, std::endian endianness) {
-		using IntermediateType = uint<sizeof(T)>;
-
+	static constexpr void dumps(std::span<uint8_t> bytes, Resized<N, T> value, std::endian endianness)
+		requires std::unsigned_integral<T>
+	{
 		assert(bytes.size() == SizeBytes);
-		auto intermediate = static_cast<IntermediateType>(std::abs(value.get()));
+		type value_ = value.get();
+
+		if constexpr (N < sizeof(T)) {
+			// downsizing
+			constexpr const T max_allowed_value = [] {
+				type result = 1 << (SizeBytes * 8 - 1);  //  = 0b1000...
+				result += result - 1;                    // += 0b0111...
+
+				return result;
+			}();
+
+			if (value_ > max_allowed_value) {
+				throw std::runtime_error("meta<Resized>::dumps: value does not fit");
+			}
+		}
+
+		std::array<uint8_t, std::max(sizeof(T), N)> buffer = {};
+		std::span<uint8_t> to_write;  // of size sizeof(T) to write intermediate value
+		std::span<uint8_t> to_copy;   // of size N to copy to output
+
+		if (endianness == std::endian::big) {
+			to_write = std::span{buffer}.subspan(buffer.size() - sizeof(T), sizeof(T));
+			to_copy = std::span{buffer}.subspan(buffer.size() - N, N);
+		} else {
+			to_write = std::span{buffer}.subspan(0, sizeof(T));
+			to_copy = std::span{buffer}.subspan(0, N);
+		}
+
+		serialize::dumps(to_write, value_, endianness);
+		std::ranges::copy(to_copy, bytes.data());
+	}
+
+	static constexpr void dumps(std::span<uint8_t> bytes, Resized<N, T> value, std::endian endianness)
+		requires std::signed_integral<T>
+	{
+		using IntermediateType = uint<sizeof(T)>;
+		auto intermediate = std::bit_cast<IntermediateType>(value.get() & ~std::numeric_limits<int>::min());
+		// intermediate has all the same bits as value except the sign bit.
 
 		if constexpr (N < sizeof(T)) {
 			// downsizing
 			constexpr const IntermediateType max_allowed_value = [] {
-				IntermediateType result = 1 << (SizeBytes * 8 - 1);  //  = 0b1000...
-				result += result - 1;                                // += 0b0111...
-
-				if constexpr (std::signed_integral<T>) result >>= 1;  // remove 1 from sign bit
+				IntermediateType result = 1 << (SizeBytes * 8 - 1);  // = 0b1000...
+				result = result - 1;                                 // = 0b0111... (max, no sign bit)
 				return result;
 			}();
 
@@ -649,12 +689,10 @@ struct meta<Resized<N, T>> {
 			}
 		}
 
-		if (endianness == std::endian::big) {
-			serialize::dumps(bytes.data() + bytes.size() - N, intermediate, N);  // write to lowest N bytes
-			if (value.get() < 0) bytes[0] |= 0b10000000;                         // set sign bit
-		} else {
-			serialize::dumps(bytes.data(), intermediate, N);
-			if (value.get() < 0) bytes[N - 1] |= 0b10000000;
+		serialize::dumps(bytes, resized<N>(intermediate), endianness);
+		if (value < 0) {
+			if (endianness == std::endian::big) bytes[0] |= 0b10000000;
+			else bytes[N - 1] |= 0b10000000;
 		}
 	}
 };
@@ -688,354 +726,5 @@ struct meta<std::chrono::time_point<Clock, Duration>> {
 		serialize::dumps<Duration>(bytes, value.time_since_epoch(), endianness);
 	}
 };
-
-// ===========
-// template<size_t N>
-// struct padding {};
-
-// template<size_t N>
-// struct cx_buffer : public std::array<uint8_t, N> {
-// 	constexpr cx_buffer(char const (&str)[N + 1]) {
-// 		for (size_t i = 0; i < N; ++i) {
-// 			(*this)[i] = static_cast<uint8_t>(str[i]);
-// 		}
-// 	}
-
-// 	template<std::integral T>
-// 		requires(sizeof(T) == N)
-// 	constexpr cx_buffer(T value) {
-// 		serialize<T>::dumps(std::span{*this}, value);
-// 	}
-// };
-
-// template<size_t N>
-// cx_buffer(char const (&str)[N]) -> cx_buffer<N - 1>;
-
-// template<std::integral T>
-// cx_buffer(T value) -> cx_buffer<sizeof(T)>;
-
-// template<cx_buffer Contents>
-// struct constant {
-// 	static constexpr size_t SizeBytes = Contents.size();
-
-// 	// constexpr constant(char const (&)[SizeBytes + 1])
-// };
-
-// using magic1 = constant<"PG">;
-
-// template<size_t N>
-// struct meta<padding<N>> {
-// 	static constexpr const size_t SizeBytes = N;
-
-// 	static constexpr void loads(padding<N>& value, std::span<uint8_t const> bytes, std::endian endianness) {
-// 		assert(bytes.size() == SizeBytes);
-// 		(void)endianness;
-// 		(void)value;
-// 	}
-
-// 	static constexpr void dumps(padding<N> value, std::span<uint8_t> bytes, std::endian endianness) {
-// 		assert(bytes.size() == SizeBytes);
-// 		(void)endianness;
-// 		(void)value;
-
-// 		std::memset(bytes.data(), 0, bytes.size());
-// 	}
-// };
-
-// template<size_t N>
-// struct meta<constant<N>> {
-// 	static constexpr const size_t SizeBytes = N;
-
-// 	static constexpr void loads(constant<N> const& value, std::span<uint8_t const> bytes, std::endian endianness) {
-// 		assert(bytes.size() == SizeBytes);
-// 		(void)endianness;
-
-// 		if (std::memcmp(value.data(), bytes.data(), bytes.size() != 0) {
-// 			throw std::runtime_error("buffer did not contain the required data");
-// 		}
-// 	}
-
-// 	static constexpr void dumps(constant<N> const& value, std::span<uint8_t> bytes, std::endian endianness) {
-// 		assert(bytes.size() == SizeBytes);
-// 		(void)endianness;
-// 		(void)value;
-
-// 		std::memcpy(bytes.data(), value.data(), bytes.size());
-// 	}
-// };
-
-// =====================================================================================================================
-
-// template<std::integral T>
-// std::array<uint8_t, sizeof(T)> to_bytes(T value, std::endian endianness) {
-// 	using intermediate_t = uint<sizeof(T)>;
-// 	std::array<uint8_t, sizeof(T)> result;
-
-// 	if (std::endian::native == endianness) {
-// 		memcpy(result.data(), &value, sizeof(T));
-// 		return result;
-// 	} else {
-// 		if constexpr (sizeof(T) == 1) {
-// 			return {static_cast<uint8_t>(value)};
-// 		} else {
-// 			intermediate_t data = 0;
-
-// #ifdef _MSC_VER
-// 			if constexpr (sizeof(T) == 2) {
-// 				data = _byteswap_ushort(static_cast<intermediate_t>(value));
-// 			} else if constexpr (sizeof(T) == 4) {
-// 				data = _byteswap_ulong(static_cast<intermediate_t>(value));
-// 			} else if constexpr (sizeof(T) == 8) {
-// 				data = _byteswap_uint64(static_cast<intermediate_t>(value));
-// 			} else {
-// 				static_assert(false);
-// 			}
-// #else
-// 			if constexpr (sizeof(T) == 2) {
-// 				data = __builtin_bswap16(static_cast<intermediate_t>(value));
-// 			} else if constexpr (sizeof(T) == 4) {
-// 				data = __builtin_bswap32(static_cast<intermediate_t>(value));
-// 			} else if constexpr (sizeof(T) == 8) {
-// 				data = __builtin_bswap64(static_cast<intermediate_t>(value));
-// 			} else {
-// 				static_assert(false);
-// 			}
-
-// #endif
-
-// 			memcpy(result.data(), &data, sizeof(T));
-// 			return result;
-// 		}
-// 	}
-// }
-
-// template<std::integral T>
-// T from_bytes(std::span<uint8_t const, sizeof(T)> data, std::endian endianness) {
-// 	if (std::endian::native == endianness) {
-// 		T result = 0;
-// 		memcpy(&result, data.data(), sizeof(T));
-// 		return result;
-// 	} else {
-// 		if constexpr (sizeof(T) == 1) {
-// 			return static_cast<T>(data[0]);
-// 		} else {
-// 			intermediate_t data_ = 0;
-// 			memcpy(&data_, data.data(), sizeof(T));
-
-// #ifdef _MSC_VER
-// 			if constexpr (sizeof(T) == 2) {
-// 				return static_cast<T>(_byteswap_ushort(data_));
-// 			} else if constexpr (sizeof(T) == 4) {
-// 				return static_cast<T>(_byteswap_ulong(data_));
-// 			} else if constexpr (sizeof(T) == 8) {
-// 				return static_cast<T>(_byteswap_uint64(data_));
-// 			} else {
-// 				static_assert(false);
-// 			}
-// #else
-// 			if constexpr (sizeof(T) == 2) {
-// 				return static_cast<T>(__builtin_bswap16(data_));
-// 			} else if constexpr (sizeof(T) == 4) {
-// 				return static_cast<T>(__builtin_bswap32(data_));
-// 			} else if constexpr (sizeof(T) == 8) {
-// 				return static_cast<T>(__builtin_bswap64(data_));
-// 			} else {
-// 				static_assert(false);
-// 			}
-// #endif
-// 		}
-// 	}
-// }
-
-// template<size_t N, std::integral T>
-// std::array<uint8_t, N> to_n_bytes(T value, std::endian endianness) {
-// 	static_assert(N > 0, "to_n_bytes: N must be greater than 0");
-// 	using intermediate_t = uint<sizeof(T)>;
-// 	auto intermediate = static_cast<intermediate_t>(abs(value));
-
-// 	if constexpr (N < sizeof(T)) {
-// 		// downsizing
-// 		constexpr const intermediate_t max_allowed_value =
-// 			(((1 << N * 8 - 1) - 1 << 1) + 1) >> (std::signed_integral<T> ? 1 : 0);
-// 		// Explanation: creating the max allowed value that fits in N bytes
-// 		// Example for N = 1:
-// 		// (1 << N * 8 - 1)              == 0b10000000
-// 		// (1 << N * 8 - 1) - 1          == 0b01111111
-// 		// (1 << N * 8 - 1) - 1 << 1     == 0b11111110
-// 		// (1 << N * 8 - 1) - 1 << 1 + 1 == 0b11111111
-// 		// then, depending on whether the original type is signed, the top 1 bit is removed (reserved for sign)
-// 		if (intermediate > max_allowed_value) {
-// 			throw std::runtime_error("to_n_bytes: value does not fit");
-// 		}
-// 	}
-
-// 	auto result_unresized = to_bytes(intermediate, endianness);
-// 	std::array<uint8_t, N> result = {};
-// 	if (endianness == std::endian::big) {
-// 		// copy lowest N bytes
-// 		memcpy(result.data(), result_unresized.data() + result_unresized.size() - N, N);
-
-// 		// set sign bit
-// 		if (value < 0) result[0] |= 0b10000000;
-// 	} else {
-// 		memcpy(result.data(), result_unresized.data(), N);
-// 		if (value < 0) result[N - 1] |= 0b10000000;
-// 	}
-
-// 	return result;
-// }
-
-// template<size_t N, std::integral T>
-// T from_n_bytes(std::span<uint8_t const, N> data, std::endian endianness) {
-// 	std::array<uint8_t, N> data_;
-// 	std::memcpy(data_.data(), data.data(), N);
-
-// 	bool negative = false;
-// 	if constexpr (std::signed_integral<T>) {
-// 		if (endianness == std::endian::big) {
-// 			negative = data_[0] & 0b10000000;
-// 			data_[0] &= 0b01111111;
-// 		} else {
-// 			negative = data_[N - 1] & 0b10000000;
-// 			data_[N - 1] &= 0b01111111;
-// 		}
-// 	}
-
-// 	if constexpr (N > sizeof(T)) {
-// 		// if N is bigger then highest N - sizeof(T) bytes will be discarded
-// 		auto to_discard = data_.subspan(endianness == std::endian::big ? 0 : sizeof(T), N - sizeof(T));
-// 		for (auto byte : to_discard) {
-// 			if (byte != 0)
-// 				throw std::runtime_error("from_n_bytes: buffer contains non-zero data in discarded bytes");
-// 		}
-// 	}
-
-// 	std::array<uint8_t, sizeof(T)> to_read = {};
-// 	constexpr const size_t copy_size = std::min(sizeof(T), N);
-
-// 	if (endianness == std::endian::big) {
-// 		// copy lowest bytes
-// 		std::memcpy(to_read.data(), data_.data() + data_.size() - copy_size, copy_size);
-// 	} else {
-// 		std::memcpy(to_read.data(), data_.data(), copy_size);
-// 	}
-
-// 	auto result = from_bytes(to_read);
-// 	if (negative) return -result;
-// 	return result;
-// }
-
-// template<std::floating_point T>
-// std::array<uint8_t, sizeof(T)> to_bytes(T value, std::endian endianness) {
-// 	using intermediate_t = uint<sizeof(T)>;
-// 	intermediate_t value_as_integer = 0;
-// 	memcpy(&value_as_integer, &value, sizeof(T));
-
-// 	return to_bytes(value_as_integer, endianness);
-// }
-
-// template<std::floating_point T>
-// T from_bytes(std::span<uint8_t const, sizeof(T)> data, std::endian endianness) {
-// 	using intermediate_t = uint<sizeof(T)>;
-// 	intermediate_t value_as_integer = from_bytes<intermediate_t>(data, endianness);
-
-// 	T result;
-// 	memcpy(&result, &value_as_integer, sizeof(T));
-// 	return result;
-// }
-
-// template<typename T>
-// 	requires std::is_enum_v<T>
-// std::array<uint8_t, sizeof(T)> to_bytes(T value, std::endian endianness) {
-// 	return to_bytes(std::to_underlying(value), endianness);
-// }
-
-// template<typename T>
-// 	requires std::is_enum_v<T>
-// T from_bytes(std::span<uint8_t const, sizeof(T)> data, std::endian endianness) {
-// 	return static_cast<T>(from_bytes<std::underlying_type_t<T>>(data, endianness));
-// }
-
-// template<typename T, size_t N>
-// auto to_bytes(std::array<T, N> array, std::endian endianness) {
-// 	constexpr const size_t element_size = std::invoke_result_t<decltype(to_bytes<std::remove_extent_t<T>>)>;
-// 	std::array<uint8_t, element_size * N> result = {};
-
-// 	for (size_t i = 0; i < array.size(); ++i) {
-// 		auto item_result = to_bytes(item, endianness);
-// 		assert(item_result.size() == element_size);
-
-// 		std::memcpy(result.data() + i * element_size, item_result.data(), element_size);
-// 	}
-
-// 	return result;
-// }
-
-// template<typename T>
-// concept StdArray = std::same_as<T, std::array<typename T::value_type, std::tuple_size_v<T>>>;
-
-// template<StdArray T>
-// T from_bytes(std::span<uint8_t const> data, std::endian endianness) {
-// 	constexpr const size_t element_size = std::invoke_result_t<decltype(to_bytes<typename T::value_type>)>;
-// 	constexpr const size_t size = std::tuple_size_v<T>;
-
-// 	T result = {};
-
-// 	for (size_t i = 0; i < size; ++i) {
-// 		result[i] = from_bytes<typename T::value_type>(data.subspan(element_size * i, element_size));
-// 	}
-
-// 	return result;
-// }
-
-// template<BoundedNDArray T>
-// auto to_bytes(T array, std::endian endianness) {
-// 	constexpr const size_t outer_extent_size = array_shape<T>[0];
-// 	constexpr const size_t element_size =
-// 		std::tuple_size_v<std::invoke_result_t<decltype(to_bytes<std::remove_extent_t<T>>)>>;
-// 	assert(std::size(array) == outer_extent_size);
-
-// 	std::array<uint8_t, outer_extent_size * element_size> result = {};
-
-// 	for (size_t i = 0; i < std::size(array); ++i) {
-// 		auto item_result = to_bytes(item, endianness);
-// 		assert(item_result.size() == element_size);
-
-// 		std::memcpy(result.data() + i * element_size, item_result.data(), element_size);
-// 	}
-
-// 	return result;
-// }
-
-// template<BoundedNDArray T>
-// auto from_bytes(std::span<uint8_t const> data, std::endian endianness) {
-// 	using return_type =
-// 		std::array<std::invoke_result_t<decltype(from_bytes<std::remove_extent_t<T>>)>, array_shape<T>[0]>;
-
-// 	return from_bytes<return_type>(data, endidanness);
-// }
-
-// template<std::ranges::input_range T>
-// std::vector<uint8_t> to_bytes(T range, std::endian endianness) {
-// 	std::vector<uint8_t> result;
-// 	for (auto&& item : range) {
-// 		auto item_result = to_bytes(item, endianness);
-// 		result.insert(result.end(), item_result.begin(), item_result.end());
-// 	}
-
-// 	return result;
-// }
-
-// template<std::ranges::output_range T>
-// T from_bytes(std::span<uint8_t const> data, std::endian endianness) {
-// 	T range;
-
-// 	for (auto&& item : range) {
-// 		item = from_bytes<std::remove_cvref_t<decltype(item)>>(data, endianness)
-
-// 	}
-
-// 	return static_cast<T>(from_bytes<std::underlying_type_t<T>>(data, endianness));
-// }
 
 }  // namespace serialize

@@ -5,6 +5,7 @@
 #include <format>
 #include <limits>
 #include <spanstream>
+#include <variant>
 
 #include "colors.hpp"
 #include "rl_encoding.hpp"
@@ -19,60 +20,65 @@ struct PgsReadError : public std::runtime_error {
 	using std::runtime_error::runtime_error;
 };
 
+struct PgsWriteError : public std::runtime_error {
+	using std::runtime_error::runtime_error;
+};
+
 struct Segment;
 
 struct SegmentHeader {
 	Timestamp presentation_ts;
 	Timestamp decoding_ts;
-	enum class Type : uint8_t {
-		PaletteDefinition = 0x14,
-		ObjectDefinition = 0x15,
-		PresentationComposition = 0x16,
-		WindowDefinition = 0x17,
-		EndOfDisplaySet = 0x80,
-
-	} type;
 };
 
 struct PresentationComposition : SegmentHeader {
-	uint16_t width;
-	uint16_t height;
-	uint8_t framerate;
-	uint16_t number;
+	uint16_t width = 0;
+	uint16_t height = 0;
+	uint8_t framerate = 0;
+	uint16_t number = 0;
+
 	enum class State : uint8_t {
 		Normal = 0x0,
 		AcquisitionPoint = 0x40,
 		EpochStart = 0x80,
-	} state;
+	} state = State::Normal;
+
 	enum class PaletteUpdateFlag : uint8_t {
 		False = 0x0,
 		True = 0x80,
-	} palette_update;
-	uint8_t palette_id;
-	// uint8_t n_composition_objects;
+	} palette_update = PaletteUpdateFlag::False;
+	uint8_t palette_id = 0;
 
 	struct CompositionObject {
-		uint16_t id;
-		uint8_t window_id;
 		enum class CroppedFlag : uint8_t {
 			False = 0x0,
 			True = 0x40,
-		} cropped;
-		uint16_t x;
-		uint16_t y;
+		};
+
+		uint16_t id = 0;
+		uint8_t window_id = 0;
+		uint16_t x = 0;
+		uint16_t y = 0;
 
 		struct Crop {
-			uint16_t x;
-			uint16_t y;
-			uint16_t width;
-			uint16_t height;
+			uint16_t x = 0;
+			uint16_t y = 0;
+			uint16_t width = 0;
+			uint16_t height = 0;
 		};
-		std::optional<Crop> crop;
+
+		// Theoretically, the PGS format allows for multiple crop objects if the cropped flag is set, but does not
+		// explain how one should distinguish when the cropped objects list ends and the next composition object begins.
+		// I have never seen multiple crop objects in practice.
+		std::optional<Crop> crop = std::nullopt;
 	};
 
 	std::vector<CompositionObject> composition_objects;
 
 	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+
+	template<serialize::OutputStream S>
+	void dump_body(S& stream) const;
 
 private:
 	friend struct Segment;
@@ -91,23 +97,30 @@ struct serialize::meta<PresentationComposition::CompositionObject::Crop> {
 
 template<>
 struct serialize::meta<PresentationComposition::CompositionObject> {
-	enum class CroppedFlag : uint8_t {
-		False = 0x0,
-		True = 0x40,
-	};
-
 	template<serialize::InputStream S>
 	static void load(S& stream, PresentationComposition::CompositionObject& obj, std::endian endianness) {
+		using CroppedFlag = PresentationComposition::CompositionObject::CroppedFlag;
+
 		CroppedFlag cropped_flag;
 		serialize::load(stream, std::tie(obj.id, obj.window_id, cropped_flag, obj.x, obj.y), endianness);
+
 		if (cropped_flag == CroppedFlag::True) {
-			obj.crop = PresentationComposition::CompositionObject::Crop{};
-			serialize::load(stream, obj.crop.value(), endianness);
+			if (stream.peek() == EOF) {
+				// This happens on some subtitle tracks, notably tests/data/sample-1.sup, which is a cutout from
+				// The Godfather.
+				std::cerr
+					<< "Warning: subtitle segment has cropped flag set but does not contain the crop information\n";
+			} else {
+				obj.crop = PresentationComposition::CompositionObject::Crop{};
+				serialize::load(stream, obj.crop.value(), endianness);
+			}
 		}
 	}
 
 	template<serialize::OutputStream S>
 	static void dump(S& stream, PresentationComposition::CompositionObject const& obj, std::endian endianness) {
+		using CroppedFlag = PresentationComposition::CompositionObject::CroppedFlag;
+
 		CroppedFlag cropped_flag = CroppedFlag::False;
 		if (obj.crop.has_value()) cropped_flag = CroppedFlag::True;
 
@@ -120,16 +133,18 @@ struct serialize::meta<PresentationComposition::CompositionObject> {
 
 struct WindowDefinition : SegmentHeader {
 	struct Window {
-		uint8_t id;
-		uint16_t x;
-		uint16_t y;
-		uint16_t width;
-		uint16_t height;
+		uint8_t id = 0;
+		uint16_t x = 0;
+		uint16_t y = 0;
+		uint16_t width = 0;
+		uint16_t height = 0;
 	};
 
 	std::vector<Window> windows;
 
 	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	template<serialize::OutputStream S>
+	void dump_body(S& stream) const;
 
 private:
 	friend struct Segment;
@@ -149,20 +164,22 @@ struct serialize::meta<WindowDefinition::Window> {
 };
 
 struct PaletteDefinition : SegmentHeader {
-	uint8_t id;
-	uint8_t version;
+	uint8_t id = 0;
+	uint8_t version = 0;
 
 	struct Entry {
-		uint8_t id;
-		uint8_t y;      /// Luminance
-		uint8_t cr;     /// Color Difference Red
-		uint8_t cb;     /// Color Difference Blue
-		uint8_t alpha;  /// Transparency
+		uint8_t id = 0;
+		uint8_t y = 0;      /// Luminance
+		uint8_t cr = 0;     /// Color Difference Red
+		uint8_t cb = 0;     /// Color Difference Blue
+		uint8_t alpha = 0;  /// Transparency
 	};
 
 	std::vector<Entry> entries;
 
 	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	template<serialize::OutputStream S>
+	void dump_body(S& stream) const;
 
 private:
 	friend struct Segment;
@@ -179,19 +196,22 @@ struct serialize::meta<PaletteDefinition::Entry> {
 };
 
 struct ObjectDefinition : SegmentHeader {
-	uint16_t id;
-	uint8_t version;
+	uint16_t id = 0;
+	uint8_t version = 0;
+
 	enum class SequenceFlag : uint8_t {
 		None = 0x0,
 		Last = 0x40,
 		First = 0x80,
-	} sequence_flag;
-	// uint48_t object_size;
-	uint16_t width;
-	uint16_t height;
+	} sequence_flag = SequenceFlag::None;
+
+	uint16_t width = 0;
+	uint16_t height = 0;
 	std::vector<uint8_t> data;
 
 	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	template<serialize::OutputStream S>
+	void dump_body(S& stream) const;
 
 private:
 	friend struct Segment;
@@ -204,6 +224,8 @@ private:
 
 struct EndOfDisplaySet : SegmentHeader {
 	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	template<serialize::OutputStream S>
+	void dump_body(S& stream) const;
 
 private:
 	friend struct Segment;
@@ -224,162 +246,63 @@ template<typename T>
 concept OneOfSegmentTypes =
 	OneOf<T, PresentationComposition, WindowDefinition, PaletteDefinition, ObjectDefinition, EndOfDisplaySet>;
 
-struct Segment {
-	static_assert(std::derived_from<PresentationComposition, SegmentHeader>);
-	static_assert(std::derived_from<WindowDefinition, SegmentHeader>);
-	static_assert(std::derived_from<PaletteDefinition, SegmentHeader>);
-	static_assert(std::derived_from<ObjectDefinition, SegmentHeader>);
-	static_assert(std::derived_from<EndOfDisplaySet, SegmentHeader>);
+struct Segment
+	: public std::
+		  variant<EndOfDisplaySet, PresentationComposition, WindowDefinition, PaletteDefinition, ObjectDefinition> {
+	using BaseType =
+		std::variant<EndOfDisplaySet, PresentationComposition, WindowDefinition, PaletteDefinition, ObjectDefinition>;
+	using BaseType::BaseType;
 
-	template<typename T>
-		requires OneOfSegmentTypes<T> or std::same_as<T, SegmentHeader>
-	T const& as() const {
-		if constexpr (std::same_as<T, SegmentHeader>) {
-			return static_cast<SegmentHeader const&>(*this);
-		} else {
-			if (header.type != T::StaticType) throw std::bad_variant_access{};
-			return const_cast<Segment&>(*this).unsafe_as<T>();
-		}
+	enum class Type : uint8_t {
+		PaletteDefinition = 0x14,
+		ObjectDefinition = 0x15,
+		PresentationComposition = 0x16,
+		WindowDefinition = 0x17,
+		EndOfDisplaySet = 0x80,
+
+	};
+
+	SegmentHeader& header() {
+		return std::visit([](auto& self) -> SegmentHeader& { return self; }, *this);
 	}
 
-	template<typename T>
-		requires OneOfSegmentTypes<T> or std::same_as<T, SegmentHeader>
-	T& as() {
-		return const_cast<T&>(std::as_const(*this).as<T>());
-	}
-
-	template<typename F>
-	decltype(auto) visit(F&& callable) const {
-		// After asserting that each class in union was derived from SegmentHeader, we can use type punning to check
-		// the header type and then use the actual stored value.
-		// An additional assert in each branch checks that the actual SegmentHeader base subobject had the same address,
-		// i.e. SegmentHeader was the FIRST base in memory layout.
-		// Type punning is undefined behavior, but I can't do it any other way without introducing overhead.
-		switch (header.type) {
-			case SegmentHeader::Type::PresentationComposition:
-				assert(static_cast<SegmentHeader const*>(&pcs) == &pcs);
-				return callable(pcs);
-			case SegmentHeader::Type::WindowDefinition:
-				assert(static_cast<SegmentHeader const*>(&wds) == &wds);
-				return callable(wds);
-			case SegmentHeader::Type::PaletteDefinition:
-				assert(static_cast<SegmentHeader const*>(&pds) == &pds);
-				return callable(pds);
-			case SegmentHeader::Type::ObjectDefinition:
-				assert(static_cast<SegmentHeader const*>(&ods) == &ods);
-				return callable(ods);
-			case SegmentHeader::Type::EndOfDisplaySet:
-				assert(static_cast<SegmentHeader const*>(&eods) == &eods);
-				return callable(eods);
-			default:
-				assert(false);  // unhandled segment type
-				std::unreachable();
-		}
-	}
-
-	template<typename F>
-	decltype(auto) visit(F&& callable) {
-		return std::as_const(*this).visit([&](auto& self) -> decltype(auto) {
-			return callable(const_cast<std::remove_const_t<decltype(self)>>(self));
-		});
+	SegmentHeader const& header() const {
+		return std::visit([](auto& self) -> SegmentHeader const& { return self; }, *this);
 	}
 
 	uint16_t size_bytes() const {
-		auto result = visit([](auto& self) { return self.size_bytes_impl(); });
+		auto result = std::visit([](auto& self) { return self.size_bytes_impl(); }, *this);
 		assert(result <= std::numeric_limits<uint16_t>::max());
 		return static_cast<uint16_t>(result);
 	}
 
-	operator SegmentHeader&() { return header; }
-	operator SegmentHeader const&() const { return header; }
+	Type type() const noexcept {
+		if (std::holds_alternative<PresentationComposition>(*this)) return Type::PresentationComposition;
+		if (std::holds_alternative<WindowDefinition>(*this)) return Type::WindowDefinition;
+		if (std::holds_alternative<PaletteDefinition>(*this)) return Type::PaletteDefinition;
+		if (std::holds_alternative<ObjectDefinition>(*this)) return Type::ObjectDefinition;
+		if (std::holds_alternative<EndOfDisplaySet>(*this)) return Type::EndOfDisplaySet;
 
-	Segment() : Segment(EndOfDisplaySet{}) {}
-
-	template<OneOfSegmentTypes T>
-	explicit Segment(T const& segment) {
-		std::construct_at(&as<T>(), segment);
+		assert(false);  // unhandled variant alternative
+		std::unreachable();
 	}
-
-	template<OneOfSegmentTypes T>
-	explicit Segment(T&& segment) {
-		std::construct_at(&as<T>(), std::move(segment));
-	}
-
-	Segment(Segment const& other) {
-		other.visit([&](auto& other_self) {
-			std::construct_at(&as<std::remove_cvref_t<decltype(other_self)>>(), other_self);
-		});
-	}
-
-	Segment(Segment&& other) {
-		other.visit([&](auto& other_self) {
-			std::construct_at(&as<std::remove_cvref_t<decltype(other_self)>>(), std::move(other_self));
-		});
-	}
-
-	Segment& operator=(Segment const& other) {
-		visit([](auto& self) { std::destroy_at(&self); });
-		other.visit([&](auto& other_self) {
-			std::construct_at(&as<std::remove_cvref_t<decltype(other_self)>>(), other_self);
-		});
-	}
-
-	Segment& operator=(Segment&& other) {
-		visit([](auto& self) { std::destroy_at(&self); });
-		other.visit([&](auto& other_self) {
-			std::construct_at(&as<std::remove_cvref_t<decltype(other_self)>>(), std::move(other_self));
-		});
-	}
-
-	~Segment() {
-		visit([](auto& self) { std::destroy_at(&self); });
-	}
-
-	template<OneOfSegmentTypes T, typename... Ts>
-	static Segment make(Ts&&... args) {
-		return Segment(ConstructTag<T>{}, std::forward<Ts>(args)...);
-	}
-
-private:
-	template<OneOfSegmentTypes T>
-	struct ConstructTag {
-		using Type = T;
-	};
-
-	template<typename Tag, typename... Ts>
-	explicit Segment(Tag tag, Ts&&... args) {
-		std::construct_at(&as<Tag::Type>(), std::forward<Ts>(args)...);
-	}
-
-	template<OneOfSegmentTypes T>
-	T& unsafe_as() {
-		if constexpr (std::same_as<T, PresentationComposition>) return pcs;
-		else if constexpr (std::same_as<T, WindowDefinition>) return wds;
-		else if constexpr (std::same_as<T, PaletteDefinition>) return pds;
-		else if constexpr (std::same_as<T, ObjectDefinition>) return ods;
-		else if constexpr (std::same_as<T, EndOfDisplaySet>) return eods;
-		else static_assert(false);
-	}
-
-	union {
-		SegmentHeader header;
-		PresentationComposition pcs;
-		WindowDefinition wds;
-		PaletteDefinition pds;
-		ObjectDefinition ods;
-		EndOfDisplaySet eods;
-	};
 };
 
+template<>
 struct serialize::meta<Segment> {
-	void load(std::istream& is, Segment& value, std::endian endianness) {
+	static void load(std::istream& is, Segment& value, std::endian endianness) {
+		assert(endianness == std::endian::big);  // PGS format only supports big-endian
+		(void)endianness;
+
 		char magic_bytes[2] = {};
 		SegmentHeader header = {};
+
+		Segment::Type segment_type = Segment::Type::EndOfDisplaySet;
 		uint16_t segment_size = 0;
 
 		std::streamoff pos = is.tellg();
 		serialize::load(
-			is, std::tie(magic_bytes, header.presentation_ts, header.decoding_ts, header.type, segment_size)
+			is, std::tie(magic_bytes, header.presentation_ts, header.decoding_ts, segment_type, segment_size)
 		);
 
 		std::string_view magic{magic_bytes, 2};
@@ -407,31 +330,54 @@ struct serialize::meta<Segment> {
 			));
 		}
 
-		switch (header.type) {
-			case SegmentHeader::Type::PaletteDefinition:
+		switch (segment_type) {
+			case Segment::Type::PaletteDefinition:
 				value = PaletteDefinition::load(header, body);
 				break;
-			case SegmentHeader::Type::ObjectDefinition:
+			case Segment::Type::ObjectDefinition:
 				value = ObjectDefinition::load(header, body);
 				break;
-			case SegmentHeader::Type::PresentationComposition:
+			case Segment::Type::PresentationComposition:
 				value = PresentationComposition::load(header, body);
 				break;
-			case SegmentHeader::Type::WindowDefinition:
+			case Segment::Type::WindowDefinition:
 				value = WindowDefinition::load(header, body);
 				break;
-			case SegmentHeader::Type::EndOfDisplaySet:
+			case Segment::Type::EndOfDisplaySet:
 				value = EndOfDisplaySet::load(header, body);
 				break;
 			default:
-				throw PgsReadError(std::format("unrecognized segment type {:#x}", std::to_underlying(header.type)));
+				throw PgsReadError(std::format("unrecognized segment type {:#x}", std::to_underlying(segment_type)));
 		}
+	}
+
+	static void dump(std::ostream& os, Segment const& value, std::endian endianness) {
+		assert(endianness == std::endian::big);  // PGS format only supports big-endian
+		(void)endianness;
+
+		std::basic_ostringstream<uint8_t> body_stream;
+		std::visit([&](auto& self) { self.dump_body(body_stream); }, value);
+
+		char magic_bytes[2] = {'P', 'G'};
+		std::uint16_t segment_size = body_stream.tellp();
+		auto segment_type = value.type();
+
+		serialize::dump(
+			os,
+			std::tie(
+				magic_bytes, value.header().presentation_ts, value.header().decoding_ts, segment_type, segment_size
+			)
+		);
+
+		std::vector<uint8_t> body(segment_size);
+
+		serialize::write_bytes(os, std::span<uint8_t const>{body_stream.str()});
 	}
 };
 
 Segment PresentationComposition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	Segment result = Segment::make<PresentationComposition>();
-	auto& obj = result.as<PresentationComposition>();
+	Segment result{std::in_place_type<PresentationComposition>};
+	auto& obj = get<PresentationComposition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
 
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
@@ -457,9 +403,26 @@ Segment PresentationComposition::load(SegmentHeader const& header, std::span<uin
 	return result;
 }
 
+template<serialize::OutputStream S>
+void PresentationComposition::dump_body(S& stream) const {
+	if (composition_objects.size() > std::numeric_limits<uint8_t>::max()) {
+		throw PgsWriteError(std::format(
+			"PresentationComposition::dump_body: number of composition objects ({}) does not fit into uint8_t",
+			composition_objects.size()
+		));
+	}
+
+	uint8_t n_composition_objects = composition_objects.size();
+	serialize::dump(
+		stream, std::tie(width, height, framerate, number, state, palette_update, palette_id, n_composition_objects)
+	);
+
+	for (auto& composition_object : composition_objects) serialize::dump(stream, composition_object);
+}
+
 Segment WindowDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	Segment result = Segment::make<WindowDefinition>();
-	auto& obj = result.as<WindowDefinition>();
+	Segment result{std::in_place_type<WindowDefinition>};
+	auto& obj = get<WindowDefinition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
 
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
@@ -471,9 +434,21 @@ Segment WindowDefinition::load(SegmentHeader const& header, std::span<uint8_t co
 	return result;
 }
 
+template<serialize::OutputStream S>
+void WindowDefinition::dump_body(S& stream) const {
+	if (windows.size() > std::numeric_limits<uint8_t>::max()) {
+		throw PgsWriteError(std::format(
+			"WindowDefinition::dump_body: number of window objects ({}) does not fit into uint8_t", windows.size()
+		));
+	}
+
+	serialize::dump(stream, static_cast<uint8_t>(windows.size()));
+	for (auto& window : windows) serialize::dump(stream, window);
+}
+
 Segment PaletteDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	Segment result = Segment::make<PaletteDefinition>();
-	auto& obj = result.as<PaletteDefinition>();
+	Segment result{std::in_place_type<PaletteDefinition>};
+	auto& obj = get<PaletteDefinition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
 
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
@@ -487,9 +462,15 @@ Segment PaletteDefinition::load(SegmentHeader const& header, std::span<uint8_t c
 	return result;
 }
 
+template<serialize::OutputStream S>
+void PaletteDefinition::dump_body(S& stream) const {
+	serialize::dump(stream, std::tie(id, version));
+	for (auto& entry : entries) serialize::dump(stream, entry);
+}
+
 Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	Segment result = Segment::make<ObjectDefinition>();
-	auto& obj = result.as<ObjectDefinition>();
+	Segment result{std::in_place_type<ObjectDefinition>};
+	auto& obj = get<ObjectDefinition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
 
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
@@ -502,6 +483,7 @@ Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uint8_t co
 		serialize::load(stream, std::tie(obj.width, obj.height));
 		data_size -= serialize::SizeBytes<decltype(std::tie(obj.width, obj.height))>;
 	} else {
+		// TODO: make these fields optional?
 		obj.width = 0;
 		obj.height = 0;
 	}
@@ -517,12 +499,34 @@ Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uint8_t co
 	return result;
 }
 
+template<serialize::OutputStream S>
+void ObjectDefinition::dump_body(S& stream) const {
+	uint64_t data_size = data.size();
+	if (std::to_underlying(sequence_flag) & std::to_underlying(SequenceFlag::First)) {
+		data_size += serialize::SizeBytes<decltype(std::tie(width, height))>;
+	}
+
+	auto data_size_ = serialize::resized<3>(data_size);
+
+	serialize::dump(stream, std::tie(id, version, sequence_flag, data_size_));
+	if (std::to_underlying(sequence_flag) & std::to_underlying(SequenceFlag::First)) {
+		serialize::dump(stream, std::tie(width, height));
+	}
+
+	serialize::write_bytes(stream, data);
+}
+
 Segment EndOfDisplaySet::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
-	Segment result = Segment::make<EndOfDisplaySet>();
-	auto& obj = result.as<EndOfDisplaySet>();
+	Segment result{std::in_place_type<EndOfDisplaySet>};
+	auto& obj = get<EndOfDisplaySet>(result);
 	static_cast<SegmentHeader&>(obj) = header;
 
 	assert(bytes.size() == 0);
 	(void)bytes;
 	return result;
+}
+
+template<serialize::OutputStream S>
+void EndOfDisplaySet::dump_body(S& stream) const {
+	(void)stream;
 }

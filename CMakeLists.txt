@@ -33,3 +33,16 @@ target_link_libraries(Boost::gil INTERFACE ZLIB::ZLIB)
 target_link_libraries(test PRIVATE Boost::gil)
 
 install(TARGETS libpgs)
+
+
+# Tests ================================================================================================================
+add_executable(pgs_tests)
+file(GLOB_RECURSE pgs_tests_SOURCES CONFIGURE_DEPENDS "tests/*.cpp")
+target_sources(pgs_tests PRIVATE ${pgs_tests_SOURCES})
+target_include_directories(pgs_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+target_compile_definitions(pgs_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
+
+set(DOCTEST_NO_INSTALL OFF CACHE INTERNAL "")
+
+find_package(doctest CONFIG REQUIRED)
+target_link_libraries(pgs_tests PRIVATE libpgs doctest::doctest)

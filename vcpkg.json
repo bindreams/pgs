@@ -1,9 +1,10 @@
 {
-	"dependencies": ["zlib", "libpng", "boost-gil"],
+	"dependencies": ["zlib", "libpng", "boost-gil", "doctest"],
 	"builtin-baseline": "c82f74667287d3dc386bce81e44964370c91a289",
 	"overrides": [
 		{"name": "boost-gil", "version": "1.85.0"},
 		{"name": "zlib", "version": "1.3.1"},
-		{"name": "libpng", "version": "1.6.43"}
+		{"name": "libpng", "version": "1.6.43"},
+		{"name": "doctest", "version": "2.4.11"}
 	]
 }
