@@ -5,10 +5,10 @@
 #include <unordered_map>
 #include <vector>
 
-std::vector<uint8_t> decode(std::span<uint8_t const> data);
+inline std::vector<uint8_t> decode(std::span<uint8_t const> data);
 
 template<typename T>
-std::vector<T> decode(std::span<uint8_t const> data, std::array<T, 256> palette) {
+inline std::vector<T> decode(std::span<uint8_t const> data, std::array<T, 256> palette) {
 	auto indexed = decode(data);
 	std::vector<T> result;
 	result.reserve(indexed.size());
@@ -20,10 +20,10 @@ std::vector<T> decode(std::span<uint8_t const> data, std::array<T, 256> palette)
 	return result;
 }
 
-std::vector<uint8_t> encode(std::span<uint8_t const> data);
+inline std::vector<uint8_t> encode(std::span<uint8_t const> data);
 
 template<typename T>
-std::vector<uint8_t> encode(std::span<T const> data, std::unordered_map<T, uint8_t> palette) {
+inline std::vector<uint8_t> encode(std::span<T const> data, std::unordered_map<T, uint8_t> palette) {
 	std::vector<uint8_t> indexed;
 	indexed.reserve(data.size());
 

@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-std::vector<uint8_t> decode(std::span<uint8_t const> data) {
+inline std::vector<uint8_t> decode(std::span<uint8_t const> data) {
 	if (data.empty()) throw std::invalid_argument("data buffer is empty");
 
 	std::vector<uint8_t> result;
@@ -69,7 +69,7 @@ std::vector<uint8_t> decode(std::span<uint8_t const> data) {
 	return result;
 }
 
-std::vector<uint8_t> encode(std::span<uint8_t const> data) {
+inline std::vector<uint8_t> encode(std::span<uint8_t const> data) {
 	std::vector<uint8_t> result;
 
 	size_t n_same = 0;

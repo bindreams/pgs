@@ -127,7 +127,7 @@ std::array<uint8_t, N> read_bytes(FILE* stream) {
 	return result;
 }
 
-std::vector<uint8_t> read_bytes(FILE* stream, size_t count) {
+inline std::vector<uint8_t> read_bytes(FILE* stream, size_t count) {
 	std::vector<uint8_t> result(count);
 
 	size_t read_count = fread(result.data(), result.size(), 1, stream);
@@ -142,7 +142,7 @@ void write_bytes(std::basic_ostream<B>& stream, std::span<uint8_t const> bytes) 
 	if (!stream.good()) throw std::runtime_error("write failed");
 }
 
-void write_bytes(FILE* stream, std::span<uint8_t const> bytes) {
+inline void write_bytes(FILE* stream, std::span<uint8_t const> bytes) {
 	size_t count = std::fwrite(bytes.data(), bytes.size(), 1, stream);
 	if (count != 1) throw std::runtime_error("write failed");
 }
@@ -243,6 +243,11 @@ constexpr void loads(std::span<B> bytes, T&& value, std::endian endianness = std
 		if (bytes.size() < meta<T>::SizeBytes) throw std::runtime_error("loads: buffer is too small");
 		meta<T>::loads(bytes.subspan(0, meta<T>::SizeBytes), value, endianness);
 	}
+}
+
+template<ConstantSizeMeta T>
+constexpr void loads(std::span<const std::uint8_t> bytes, T&& value, std::endian endianness = std::endian::big) {
+	return loads<T, const std::uint8_t>(bytes, std::forward<T>(value), endianness);
 }
 
 template<ConstantSizeMeta T, ByteLike B>

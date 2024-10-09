@@ -5,27 +5,27 @@
 #include <array>
 #include <cmath>
 
-std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> convert_RGBA_YCbCrA_BT709(
+inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> convert_RGBA_YCbCrA_BT709(
 	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> rgba
 ) {
 	auto [red, green, blue, alpha] = rgba;
 	return convert_RGBA_YCbCrA_BT709(red, green, blue, alpha);
 }
 
-std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t>
+inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t>
 convert_RGBA_YCbCrA_BT709(std::uint8_t red, std::uint8_t green, std::uint8_t blue, std::uint8_t alpha) {
 	auto [y, cb, cr] = convert_RGB_YCbCr_BT709(red, green, blue);
 	return {y, cb, cr, alpha};
 }
 
-std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> convert_RGB_YCbCr_BT709(
+inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> convert_RGB_YCbCr_BT709(
 	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> rgb
 ) {
 	auto [red, green, blue] = rgb;
 	return convert_RGB_YCbCr_BT709(red, green, blue);
 }
 
-std::tuple<std::uint8_t, std::uint8_t, std::uint8_t>
+inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t>
 convert_RGB_YCbCr_BT709(std::uint8_t red, std::uint8_t green, std::uint8_t blue) {
 	constexpr const std::array<std::array<double, 3>, 3> matrix = {{
 		{+0.183, +0.614, +0.062},
@@ -62,27 +62,27 @@ convert_RGB_YCbCr_BT709(std::uint8_t red, std::uint8_t green, std::uint8_t blue)
 	};
 }
 
-std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> convert_YCbCrA_BT709_RGBA(
+inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> convert_YCbCrA_BT709_RGBA(
 	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> ycbcra
 ) {
 	auto [y, cb, cr, alpha] = ycbcra;
 	return convert_YCbCrA_BT709_RGBA(y, cb, cr, alpha);
 }
 
-std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t>
+inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t>
 convert_YCbCrA_BT709_RGBA(std::uint8_t y, std::uint8_t cb, std::uint8_t cr, std::uint8_t alpha) {
 	auto [red, green, blue] = convert_YCbCr_BT709_RGB(y, cb, cr);
 	return {red, green, blue, alpha};
 }
 
-std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> convert_YCbCr_BT709_RGB(
+inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> convert_YCbCr_BT709_RGB(
 	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> ycbcr
 ) {
 	auto [y, cb, cr] = ycbcr;
 	return convert_YCbCr_BT709_RGB(y, cb, cr);
 }
 
-std::tuple<std::uint8_t, std::uint8_t, std::uint8_t>
+inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t>
 convert_YCbCr_BT709_RGB(std::uint8_t y, std::uint8_t cb, std::uint8_t cr) {
 	constexpr const std::array<std::array<double, 3>, 3> matrix = {{
 		{+1.164, +0.000, +1.793},

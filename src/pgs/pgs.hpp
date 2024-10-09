@@ -375,7 +375,7 @@ struct serialize::meta<Segment> {
 	}
 };
 
-Segment PresentationComposition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment PresentationComposition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<PresentationComposition>};
 	auto& obj = get<PresentationComposition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
@@ -404,7 +404,7 @@ Segment PresentationComposition::load(SegmentHeader const& header, std::span<uin
 }
 
 template<serialize::OutputStream S>
-void PresentationComposition::dump_body(S& stream) const {
+inline void PresentationComposition::dump_body(S& stream) const {
 	if (composition_objects.size() > std::numeric_limits<uint8_t>::max()) {
 		throw PgsWriteError(std::format(
 			"PresentationComposition::dump_body: number of composition objects ({}) does not fit into uint8_t",
@@ -420,7 +420,7 @@ void PresentationComposition::dump_body(S& stream) const {
 	for (auto& composition_object : composition_objects) serialize::dump(stream, composition_object);
 }
 
-Segment WindowDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment WindowDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<WindowDefinition>};
 	auto& obj = get<WindowDefinition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
@@ -435,7 +435,7 @@ Segment WindowDefinition::load(SegmentHeader const& header, std::span<uint8_t co
 }
 
 template<serialize::OutputStream S>
-void WindowDefinition::dump_body(S& stream) const {
+inline void WindowDefinition::dump_body(S& stream) const {
 	if (windows.size() > std::numeric_limits<uint8_t>::max()) {
 		throw PgsWriteError(std::format(
 			"WindowDefinition::dump_body: number of window objects ({}) does not fit into uint8_t", windows.size()
@@ -446,7 +446,7 @@ void WindowDefinition::dump_body(S& stream) const {
 	for (auto& window : windows) serialize::dump(stream, window);
 }
 
-Segment PaletteDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment PaletteDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<PaletteDefinition>};
 	auto& obj = get<PaletteDefinition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
@@ -463,12 +463,12 @@ Segment PaletteDefinition::load(SegmentHeader const& header, std::span<uint8_t c
 }
 
 template<serialize::OutputStream S>
-void PaletteDefinition::dump_body(S& stream) const {
+inline void PaletteDefinition::dump_body(S& stream) const {
 	serialize::dump(stream, std::tie(id, version));
 	for (auto& entry : entries) serialize::dump(stream, entry);
 }
 
-Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<ObjectDefinition>};
 	auto& obj = get<ObjectDefinition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
@@ -500,7 +500,7 @@ Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uint8_t co
 }
 
 template<serialize::OutputStream S>
-void ObjectDefinition::dump_body(S& stream) const {
+inline void ObjectDefinition::dump_body(S& stream) const {
 	uint64_t data_size = data.size();
 	if (std::to_underlying(sequence_flag) & std::to_underlying(SequenceFlag::First)) {
 		data_size += serialize::SizeBytes<decltype(std::tie(width, height))>;
@@ -516,7 +516,7 @@ void ObjectDefinition::dump_body(S& stream) const {
 	serialize::write_bytes(stream, data);
 }
 
-Segment EndOfDisplaySet::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment EndOfDisplaySet::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<EndOfDisplaySet>};
 	auto& obj = get<EndOfDisplaySet>(result);
 	static_cast<SegmentHeader&>(obj) = header;
@@ -527,6 +527,6 @@ Segment EndOfDisplaySet::load(SegmentHeader const& header, std::span<uint8_t con
 }
 
 template<serialize::OutputStream S>
-void EndOfDisplaySet::dump_body(S& stream) const {
+inline void EndOfDisplaySet::dump_body(S& stream) const {
 	(void)stream;
 }
