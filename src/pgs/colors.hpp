@@ -2,32 +2,59 @@
 #include <cstdint>
 #include <tuple>
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> convert_RGBA_YCbCrA_BT709(
-	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> rgba
-);
+namespace colormodels {
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t>
-convert_RGBA_YCbCrA_BT709(std::uint8_t red, std::uint8_t green, std::uint8_t blue, std::uint8_t alpha);
+struct Rgb {
+	std::uint8_t red = 0;
+	std::uint8_t green = 0;
+	std::uint8_t blue = 0;
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> convert_RGB_YCbCr_BT709(
-	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> rgb
-);
+	auto operator<=>(Rgb const&) const = default;
+};
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t>
-convert_RGB_YCbCr_BT709(std::uint8_t red, std::uint8_t green, std::uint8_t blue);
+struct Rgba {
+	std::uint8_t red = 0;
+	std::uint8_t green = 0;
+	std::uint8_t blue = 0;
+	std::uint8_t alpha = 0;
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> convert_YCbCrA_BT709_RGBA(
-	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> ycbcra
-);
+	explicit operator Rgb() const { return {red, green, blue}; }
+	auto operator<=>(Rgba const&) const = default;
+};
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t>
-convert_YCbCrA_BT709_RGBA(std::uint8_t y, std::uint8_t cb, std::uint8_t cr, std::uint8_t alpha);
+struct YCbCr_BT709 {
+	std::uint8_t y = 16;
+	std::uint8_t cb = 128;
+	std::uint8_t cr = 128;
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> convert_YCbCr_BT709_RGB(
-	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> ycbcr
-);
+	auto operator<=>(YCbCr_BT709 const&) const = default;
+};
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t>
-convert_YCbCr_BT709_RGB(std::uint8_t y, std::uint8_t cb, std::uint8_t cr);
+struct YCbCrA_BT709 {
+	std::uint8_t y = 16;
+	std::uint8_t cb = 128;
+	std::uint8_t cr = 128;
+	std::uint8_t alpha = 0;
+
+	explicit operator YCbCr_BT709() const { return {y, cb, cr}; }
+	auto operator<=>(YCbCrA_BT709 const&) const = default;
+};
+
+}  // namespace colormodels
+
+template<typename T, typename U>
+inline T convert(U color);
+
+template<>
+inline colormodels::Rgb convert<colormodels::Rgb, colormodels::YCbCr_BT709>(colormodels::YCbCr_BT709 color);
+
+template<>
+inline colormodels::YCbCr_BT709 convert<colormodels::YCbCr_BT709, colormodels::Rgb>(colormodels::Rgb color);
+
+template<>
+inline colormodels::Rgba convert<colormodels::Rgba, colormodels::YCbCrA_BT709>(colormodels::YCbCrA_BT709 color);
+
+template<>
+inline colormodels::YCbCrA_BT709 convert<colormodels::YCbCrA_BT709, colormodels::Rgba>(colormodels::Rgba color);
 
 #include "colors.inl.hpp"

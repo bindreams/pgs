@@ -5,28 +5,14 @@
 #include <array>
 #include <cmath>
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> convert_RGBA_YCbCrA_BT709(
-	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> rgba
-) {
-	auto [red, green, blue, alpha] = rgba;
-	return convert_RGBA_YCbCrA_BT709(red, green, blue, alpha);
+template<>
+inline colormodels::YCbCrA_BT709 convert<colormodels::YCbCrA_BT709, colormodels::Rgba>(colormodels::Rgba color) {
+	auto [y, cb, cr] = convert<colormodels::YCbCr_BT709>(static_cast<colormodels::Rgb>(color));
+	return {y, cb, cr, color.alpha};
 }
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t>
-convert_RGBA_YCbCrA_BT709(std::uint8_t red, std::uint8_t green, std::uint8_t blue, std::uint8_t alpha) {
-	auto [y, cb, cr] = convert_RGB_YCbCr_BT709(red, green, blue);
-	return {y, cb, cr, alpha};
-}
-
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> convert_RGB_YCbCr_BT709(
-	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> rgb
-) {
-	auto [red, green, blue] = rgb;
-	return convert_RGB_YCbCr_BT709(red, green, blue);
-}
-
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t>
-convert_RGB_YCbCr_BT709(std::uint8_t red, std::uint8_t green, std::uint8_t blue) {
+template<>
+inline colormodels::YCbCr_BT709 convert<colormodels::YCbCr_BT709, colormodels::Rgb>(colormodels::Rgb color) {
 	constexpr const std::array<std::array<double, 3>, 3> matrix = {{
 		{+0.183, +0.614, +0.062},
 		{-0.101, -0.339, +0.439},
@@ -34,6 +20,7 @@ convert_RGB_YCbCr_BT709(std::uint8_t red, std::uint8_t green, std::uint8_t blue)
 	}};
 	constexpr const std::array<double, 3> add = {16, 128, 128};
 
+	auto& [red, green, blue] = color;
 	std::array<double, 3> rgb = {static_cast<double>(red), static_cast<double>(green), static_cast<double>(blue)};
 	std::array<double, 3> ycbcr = {};
 
@@ -62,28 +49,19 @@ convert_RGB_YCbCr_BT709(std::uint8_t red, std::uint8_t green, std::uint8_t blue)
 	};
 }
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> convert_YCbCrA_BT709_RGBA(
-	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t> ycbcra
-) {
-	auto [y, cb, cr, alpha] = ycbcra;
-	return convert_YCbCrA_BT709_RGBA(y, cb, cr, alpha);
+template<>
+inline colormodels::Rgba convert<colormodels::Rgba, colormodels::YCbCrA_BT709>(colormodels::YCbCrA_BT709 color) {
+	auto [red, green, blue] = convert<colormodels::Rgb>(static_cast<colormodels::YCbCr_BT709>(color));
+	return {red, green, blue, color.alpha};
 }
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t, std::uint8_t>
-convert_YCbCrA_BT709_RGBA(std::uint8_t y, std::uint8_t cb, std::uint8_t cr, std::uint8_t alpha) {
-	auto [red, green, blue] = convert_YCbCr_BT709_RGB(y, cb, cr);
-	return {red, green, blue, alpha};
-}
+template<>
+inline colormodels::Rgb convert<colormodels::Rgb, colormodels::YCbCr_BT709>(colormodels::YCbCr_BT709 color) {
+	// Verify that the color passed falls within the YCbCr limits
+	assert(16 <= color.y and color.y <= 235);
+	assert(16 <= color.cb and color.cb <= 240);
+	assert(16 <= color.cr and color.cr <= 240);
 
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> convert_YCbCr_BT709_RGB(
-	std::tuple<std::uint8_t, std::uint8_t, std::uint8_t> ycbcr
-) {
-	auto [y, cb, cr] = ycbcr;
-	return convert_YCbCr_BT709_RGB(y, cb, cr);
-}
-
-inline std::tuple<std::uint8_t, std::uint8_t, std::uint8_t>
-convert_YCbCr_BT709_RGB(std::uint8_t y, std::uint8_t cb, std::uint8_t cr) {
 	constexpr const std::array<std::array<double, 3>, 3> matrix = {{
 		{+1.164, +0.000, +1.793},
 		{+1.164, -0.213, -0.533},
@@ -91,6 +69,7 @@ convert_YCbCr_BT709_RGB(std::uint8_t y, std::uint8_t cb, std::uint8_t cr) {
 	}};
 	constexpr const std::array<double, 3> add = {16, 128, 128};
 
+	auto& [y, cb, cr] = color;
 	std::array<double, 3> ycbcr = {static_cast<double>(y), static_cast<double>(cb), static_cast<double>(cr)};
 	std::array<double, 3> rgb = {};
 
