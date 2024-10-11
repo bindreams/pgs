@@ -75,7 +75,7 @@ struct PresentationComposition : SegmentHeader {
 
 	std::vector<CompositionObject> composition_objects;
 
-	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 
 	template<serialize::OutputStream S>
 	void dump_body(S& stream) const;
@@ -142,7 +142,7 @@ struct WindowDefinition : SegmentHeader {
 
 	std::vector<Window> windows;
 
-	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serialize::OutputStream S>
 	void dump_body(S& stream) const;
 
@@ -177,7 +177,7 @@ struct PaletteDefinition : SegmentHeader {
 
 	std::vector<Entry> entries;
 
-	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serialize::OutputStream S>
 	void dump_body(S& stream) const;
 
@@ -207,7 +207,7 @@ struct ObjectDefinition : SegmentHeader {
 
 	std::vector<uint8_t> data;
 
-	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serialize::OutputStream S>
 	void dump_body(S& stream) const;
 
@@ -221,7 +221,7 @@ private:
 };
 
 struct EndOfDisplaySet : SegmentHeader {
-	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
+	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serialize::OutputStream S>
 	void dump_body(S& stream) const;
 
@@ -330,19 +330,19 @@ struct serialize::meta<Segment> {
 
 		switch (segment_type) {
 			case Segment::Type::PaletteDefinition:
-				value = PaletteDefinition::load(header, body);
+				value = PaletteDefinition::load_body(header, body);
 				break;
 			case Segment::Type::ObjectDefinition:
-				value = ObjectDefinition::load(header, body);
+				value = ObjectDefinition::load_body(header, body);
 				break;
 			case Segment::Type::PresentationComposition:
-				value = PresentationComposition::load(header, body);
+				value = PresentationComposition::load_body(header, body);
 				break;
 			case Segment::Type::WindowDefinition:
-				value = WindowDefinition::load(header, body);
+				value = WindowDefinition::load_body(header, body);
 				break;
 			case Segment::Type::EndOfDisplaySet:
-				value = EndOfDisplaySet::load(header, body);
+				value = EndOfDisplaySet::load_body(header, body);
 				break;
 			default:
 				throw PgsReadError(std::format("unrecognized segment type {:#x}", std::to_underlying(segment_type)));
@@ -373,7 +373,7 @@ struct serialize::meta<Segment> {
 	}
 };
 
-inline Segment PresentationComposition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment PresentationComposition::load_body(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<PresentationComposition>};
 	auto& obj = get<PresentationComposition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
@@ -418,7 +418,7 @@ inline void PresentationComposition::dump_body(S& stream) const {
 	for (auto& composition_object : composition_objects) serialize::dump(stream, composition_object);
 }
 
-inline Segment WindowDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment WindowDefinition::load_body(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<WindowDefinition>};
 	auto& obj = get<WindowDefinition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
@@ -444,7 +444,7 @@ inline void WindowDefinition::dump_body(S& stream) const {
 	for (auto& window : windows) serialize::dump(stream, window);
 }
 
-inline Segment PaletteDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment PaletteDefinition::load_body(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<PaletteDefinition>};
 	auto& obj = get<PaletteDefinition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
@@ -466,7 +466,7 @@ inline void PaletteDefinition::dump_body(S& stream) const {
 	for (auto& entry : entries) serialize::dump(stream, entry);
 }
 
-inline Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment ObjectDefinition::load_body(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<ObjectDefinition>};
 	auto& obj = get<ObjectDefinition>(result);
 	static_cast<SegmentHeader&>(obj) = header;
@@ -498,7 +498,7 @@ inline void ObjectDefinition::dump_body(S& stream) const {
 	serialize::write_bytes(stream, data);
 }
 
-inline Segment EndOfDisplaySet::load(SegmentHeader const& header, std::span<uint8_t const> bytes) {
+inline Segment EndOfDisplaySet::load_body(SegmentHeader const& header, std::span<uint8_t const> bytes) {
 	Segment result{std::in_place_type<EndOfDisplaySet>};
 	auto& obj = get<EndOfDisplaySet>(result);
 	static_cast<SegmentHeader&>(obj) = header;
