@@ -15,52 +15,78 @@ void print_bytes(T&& range) {
 void main_() {
 	std::ifstream ifs("tests/data/sample-2.sup", std::ios::binary);
 	ifs.exceptions(std::ios::failbit | std::ios::badbit);
-
-	std::stringstream ss;
-	ss << ifs.rdbuf();
+	std::stringstream input;
+	input << ifs.rdbuf();
 	ifs.close();
 
-	std::vector<uint8_t> source(ss.tellp());
-	std::ranges::transform(ss.str(), source.begin(), [](char ch) { return std::bit_cast<uint8_t>(ch); });
-
 	std::vector<Segment> segments;
-	size_t i = 0;
-	while (ss.peek() != EOF) {
-		std::streamoff start = ss.tellg();
-		auto x = serialize::load<Segment>(ss);
-		if (x.type() == Segment::Type::ObjectDefinition) {
-			std::cerr << "Len:" << std::get<ObjectDefinition>(x).data.size() << "\n";
-		}
-		std::span original_bytes{source.data() + start, static_cast<std::size_t>(ss.tellg()) - start};
+	while (input.peek() != EOF) segments.push_back(serialize::load<Segment>(input));
 
-		std::ostringstream oss;
-		serialize::dump(oss, x);
-
-		std::vector<uint8_t> new_bytes(oss.tellp());
-		std::ranges::transform(oss.str(), new_bytes.begin(), [](char ch) { return std::bit_cast<uint8_t>(ch); });
-
-		if (std::vector<uint8_t>{original_bytes.begin(), original_bytes.end()} != new_bytes) {
-			std::cerr << i << "\n";
-			std::cerr << (int)std::to_underlying(x.type()) << "\n";
-
-			for (size_t i = 0;; ++i) {
-				if (original_bytes[i] != new_bytes[i]) {
-					std::cerr << "FAIL: " << i << "\n";
-					break;
-				}
+	for (auto& segment : segments) {
+		if (segment.type() == Segment::Type::ObjectDefinition) {
+			auto& ods = std::get<ObjectDefinition>(segment);
+			if (std::to_underlying(ods.sequence_flag) & std::to_underlying(ObjectDefinition::SequenceFlag::First) and
+				std::to_underlying(ods.sequence_flag) & std::to_underlying(ObjectDefinition::SequenceFlag::Last)) {
+				Bitmap bm = decode(std::span{ods.data});
+				ods.data = encode(bm);
 			}
-			print_bytes(original_bytes);
-			print_bytes(new_bytes);
-			std::cerr << "\n";
-			break;
 		}
-
-		// segments.push_back(serialize::load<Segment>(ss));
-		++i;
 	}
 
-	std::ofstream ofs("out.sup", std::ios::binary);
-	for (auto& segment : segments) serialize::dump(ofs, segment);
+	std::ostringstream output;
+	for (auto& segment : segments) serialize::dump(output, segment);
+	// =================================================================================================================
+
+	// std::ifstream ifs("tests/data/sample-2.sup", std::ios::binary);
+	// ifs.exceptions(std::ios::failbit | std::ios::badbit);
+
+	// std::stringstream ss;
+	// ss << ifs.rdbuf();
+	// ifs.close();
+
+	// std::vector<uint8_t> source(ss.tellp());
+	// std::ranges::transform(ss.str(), source.begin(), [](char ch) { return std::bit_cast<uint8_t>(ch); });
+
+	// std::vector<Segment> segments;
+	// size_t i = 0;
+	// while (ss.peek() != EOF) {
+	// 	std::streamoff start = ss.tellg();
+	// 	auto x = serialize::load<Segment>(ss);
+	// 	if (x.type() == Segment::Type::ObjectDefinition) {
+	// 		std::cerr << "Len:" << std::get<ObjectDefinition>(x).data.size() << "\n";
+	// 	}
+	// 	std::span original_bytes{source.data() + start, static_cast<std::size_t>(ss.tellg()) - start};
+
+	// 	std::ostringstream oss;
+	// 	serialize::dump(oss, x);
+
+	// 	std::vector<uint8_t> new_bytes(oss.tellp());
+	// 	std::ranges::transform(oss.str(), new_bytes.begin(), [](char ch) { return std::bit_cast<uint8_t>(ch); });
+
+	// 	if (std::vector<uint8_t>{original_bytes.begin(), original_bytes.end()} != new_bytes) {
+	// 		std::cerr << i << "\n";
+	// 		std::cerr << (int)std::to_underlying(x.type()) << "\n";
+
+	// 		for (size_t i = 0;; ++i) {
+	// 			if (original_bytes[i] != new_bytes[i]) {
+	// 				std::cerr << "FAIL: " << i << "\n";
+	// 				break;
+	// 			}
+	// 		}
+	// 		print_bytes(original_bytes);
+	// 		print_bytes(new_bytes);
+	// 		std::cerr << "\n";
+	// 		break;
+	// 	}
+
+	// 	// segments.push_back(serialize::load<Segment>(ss));
+	// 	++i;
+	// }
+
+	// std::ofstream ofs("out.sup", std::ios::binary);
+	// for (auto& segment : segments) serialize::dump(ofs, segment);
+
+	// =================================================================================================================
 
 	// namespace bg = boost::gil;
 	// static_assert(sizeof(bg::rgba8_pixel_t) == 4);

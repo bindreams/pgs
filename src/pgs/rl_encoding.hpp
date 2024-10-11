@@ -10,7 +10,7 @@ struct Bitmap {
 	Bitmap(uint16_t width, uint16_t height) : m_data(static_cast<std::size_t>(width) * height), m_row_size(width) {}
 
 	Bitmap(uint16_t width, uint16_t height, std::vector<T> data) : m_data(std::move(data)), m_row_size(width) {
-		assert(data.size() == static_cast<std::size_t>(width) * height);
+		assert(m_data.size() == static_cast<std::size_t>(width) * height);
 	}
 
 	uint16_t rows() const { return m_data.size() / columns(); }
@@ -29,6 +29,11 @@ struct Bitmap {
 
 	std::size_t size() const { return m_data.size(); }
 
+	auto begin() { return m_data.data(); }
+	auto begin() const { return m_data.data(); }
+	auto end() { return m_data.data() + m_data.size(); }
+	auto end() const { return m_data.data() + m_data.size(); }
+
 private:
 	std::vector<T> m_data;
 	uint16_t m_row_size;
@@ -44,19 +49,15 @@ inline Bitmap<T> decode(std::span<uint8_t const> data, std::array<T, 256> palett
 
 	std::ranges::transform(indexed, std::back_inserter(result), [&](uint8_t index) { return palette[index]; });
 
-	return Bitmap{indexed.columns(), indexed.rows(), std::move(result)};
+	return Bitmap{indexed.width(), indexed.height(), std::move(result)};
 }
 
-inline std::vector<uint8_t> encode(std::span<uint8_t const> data);
+inline std::vector<uint8_t> encode(Bitmap<uint8_t> const& bitmap);
 
 template<typename T>
-inline std::vector<uint8_t> encode(std::span<T const> data, std::unordered_map<T, uint8_t> palette) {
-	std::vector<uint8_t> indexed;
-	indexed.reserve(data.size());
-
-	std::transform(data.begin(), data.end(), std::back_inserter(indexed), [&](T const& value) {
-		return palette[value];
-	});
+inline std::vector<uint8_t> encode(Bitmap<T> const& bitmap, std::unordered_map<T, uint8_t> palette) {
+	Bitmap<uint8_t> indexed{bitmap.width(), bitmap.height()};
+	std::ranges::transform(bitmap, indexed.begin(), [&](T const& value) { return palette[value]; });
 
 	return encode(indexed);
 }

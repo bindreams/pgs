@@ -50,3 +50,26 @@ TEST_CASE("roundtrip") {
 
 	assert_equal(input.str(), output.str());
 }
+
+TEST_CASE("rl-encoding.roundtrip") {
+	std::ifstream ifs("tests/data/sample-2.sup", std::ios::binary);
+	ifs.exceptions(std::ios::failbit | std::ios::badbit);
+	std::stringstream input;
+	input << ifs.rdbuf();
+	ifs.close();
+
+	std::vector<Segment> segments;
+	while (input.peek() != EOF) segments.push_back(serialize::load<Segment>(input));
+
+	for (auto& segment : segments) {
+		if (segment.type() == Segment::Type::ObjectDefinition) {
+			auto& ods = std::get<ObjectDefinition>(segment);
+			if (std::to_underlying(ods.sequence_flag) & std::to_underlying(ObjectDefinition::SequenceFlag::First) and
+				std::to_underlying(ods.sequence_flag) & std::to_underlying(ObjectDefinition::SequenceFlag::Last)) {
+				Bitmap bm = decode(std::span{ods.data});
+				auto roundtrip_data = encode(bm);
+				assert_equal(ods.data, roundtrip_data);
+			}
+		}
+	}
+}
