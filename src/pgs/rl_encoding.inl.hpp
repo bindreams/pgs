@@ -44,19 +44,18 @@ inline Bitmap<uint8_t> decode(std::span<uint8_t const> data) {
 				break;
 			}
 
-			uint8_t flag = byte1 >> 6;  // top 2 bits
-			byte1 &= 0b00111111;        // remove top 2 bits
-
+			uint8_t flag = byte1 >> 6;                 // top 2 flag bits
+			uint8_t byte1_clean = byte1 & 0b00111111;  // remove top 2 flag bits
 			size_t n_pixels = 0;
 			uint8_t color = 0;
 
 			if (flag == 0b00) {
 				// 00000000 00LLLLLL: L pixels in color 0 (L between 1 and 63)
-				n_pixels = byte1;
+				n_pixels = byte1_clean;
 			} else if (flag == 0b01) {
 				// 00000000 01LLLLLL LLLLLLLL: L pixels in color 0 (L between 64 and 16383)
 				uint8_t byte2 = advance();
-				n_pixels = (byte1 << 8) + byte2;
+				n_pixels = (byte1_clean << 8) + byte2;
 				if (not(64 <= n_pixels and n_pixels <= 16383)) {
 					throw std::runtime_error(
 						std::format("unrecognized byte sequence {:#04x} {:#04x} {:#04x}", byte0, byte1, byte2)
@@ -64,7 +63,7 @@ inline Bitmap<uint8_t> decode(std::span<uint8_t const> data) {
 				}
 			} else if (flag == 0b10) {
 				// 00000000 10LLLLLL CCCCCCCC: L pixels in color C (L between 3 and 63)
-				n_pixels = byte1;
+				n_pixels = byte1_clean;
 				if (not(3 <= n_pixels and n_pixels <= 63)) {
 					throw std::runtime_error(std::format("unrecognized byte sequence {:#04x} {:#04x}", byte0, byte1));
 				}
@@ -74,7 +73,7 @@ inline Bitmap<uint8_t> decode(std::span<uint8_t const> data) {
 			} else if (flag == 0b11) {
 				// 00000000 11LLLLLL LLLLLLLL CCCCCCCC: L pixels in color C (L between 64 and 16383)
 				uint8_t byte2 = advance();
-				n_pixels = (byte1 << 8) + byte2;
+				n_pixels = (byte1_clean << 8) + byte2;
 				if (not(64 <= n_pixels and n_pixels <= 16383)) {
 					throw std::runtime_error(
 						std::format("unrecognized byte sequence {:#04x} {:#04x} {:#04x}", byte0, byte1, byte2)
