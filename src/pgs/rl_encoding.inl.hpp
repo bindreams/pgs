@@ -1,26 +1,41 @@
 #pragma once
 #include "rl_encoding.hpp"
+#include "serialize.hpp"
 
 #include <algorithm>
+#include <format>
 #include <iterator>
 #include <span>
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
-inline std::vector<uint8_t> decode(std::span<uint8_t const> data) {
-	if (data.empty()) throw std::invalid_argument("data buffer is empty");
+inline Bitmap<uint8_t> decode(std::span<uint8_t const> data) {
+	if (data.empty()) throw std::runtime_error("data buffer is empty");
+
+	auto width = serialize::loads<std::uint16_t>(data.subspan<0, 2>());
+	auto height = serialize::loads<std::uint16_t>(data.subspan<2, 2>());
+	auto total_size = static_cast<std::size_t>(width) * height;
+	data = data.subspan(4);
+	if (data.size() != total_size) {
+		throw std::runtime_error(std::format(
+			"pixel buffer size ({}) does not match decoded size ({}*{}={})", data.size(), width, height, total_size
+		));
+	}
 
 	std::vector<uint8_t> result;
+	result.reserve(std::size_t(width) * height);
 
-	auto iter = data.begin();
-	auto advance = [&]() {
-		++iter;
-		if (iter == data.end()) throw std::invalid_argument("reached end of data");
-		return *iter;
-	};
+	for (std::size_t row_i = 0; row_i < height; ++row_i) {
+		auto row = data.subspan(width * row_i, width);
 
-	for (; iter != data.end(); ++iter) {
+		auto iter = row.begin();
+		auto advance = [&]() {
+			++iter;
+			if (iter == row.end()) throw std::runtime_error(std::format("row {}: unexpected end of row", row_i));
+			return *iter;
+		};
+
 		// Decode a single line
 		for (uint8_t byte0 = *iter;; byte0 = advance()) {
 			if (byte0 != 0) {
@@ -64,9 +79,12 @@ inline std::vector<uint8_t> decode(std::span<uint8_t const> data) {
 
 			result.insert(result.end(), n_pixels, color);
 		}
+
+		++iter;
+		if (iter != row.end()) throw std::runtime_error(std::format("unexpected data after end of row {}", row_i));
 	}
 
-	return result;
+	return Bitmap{width, height, std::move(result)};
 }
 
 inline std::vector<uint8_t> encode(std::span<uint8_t const> data) {

@@ -205,8 +205,6 @@ struct ObjectDefinition : SegmentHeader {
 		First = 0x80,
 	} sequence_flag = SequenceFlag::None;
 
-	uint16_t width = 0;
-	uint16_t height = 0;
 	std::vector<uint8_t> data;
 
 	static Segment load(SegmentHeader const& header, std::span<uint8_t const> bytes);
@@ -479,14 +477,6 @@ inline Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uin
 	auto data_size_ = serialize::resized<3>(data_size);
 
 	serialize::load(stream, std::tie(obj.id, obj.version, obj.sequence_flag, data_size_));
-	if (std::to_underlying(obj.sequence_flag) & std::to_underlying(SequenceFlag::First)) {
-		serialize::load(stream, std::tie(obj.width, obj.height));
-		data_size -= serialize::SizeBytes<decltype(std::tie(obj.width, obj.height))>;
-	} else {
-		// TODO: make these fields optional?
-		obj.width = 0;
-		obj.height = 0;
-	}
 
 	if (data_size != bytes.size() - static_cast<std::size_t>(stream.tellg()))
 		throw PgsReadError(std::format(
@@ -502,17 +492,9 @@ inline Segment ObjectDefinition::load(SegmentHeader const& header, std::span<uin
 template<serialize::OutputStream S>
 inline void ObjectDefinition::dump_body(S& stream) const {
 	uint64_t data_size = data.size();
-	if (std::to_underlying(sequence_flag) & std::to_underlying(SequenceFlag::First)) {
-		data_size += serialize::SizeBytes<decltype(std::tie(width, height))>;
-	}
-
 	auto data_size_ = serialize::resized<3>(data_size);
 
 	serialize::dump(stream, std::tie(id, version, sequence_flag, data_size_));
-	if (std::to_underlying(sequence_flag) & std::to_underlying(SequenceFlag::First)) {
-		serialize::dump(stream, std::tie(width, height));
-	}
-
 	serialize::write_bytes(stream, data);
 }
 

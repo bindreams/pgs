@@ -10,10 +10,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
-
 namespace serialize {
 
 // The following block taken from https://github.com/bindreams/zint-bindings/blob/main/src/zint/src/utility.hpp ========
@@ -236,34 +232,34 @@ constexpr void dump(S& stream, T const& value, std::endian endianness = std::end
 }
 
 template<ConstantSizeMeta T, ByteLike B>
-constexpr void loads(std::span<B> bytes, T&& value, std::endian endianness = std::endian::big) {
+constexpr void loads(std::span<B, SizeBytes<T>> bytes, T&& value, std::endian endianness = std::endian::big) {
 	if constexpr (HasProxyMeta<T>) {
 		loads(bytes, meta<T>::proxy(std::forward<T>(value)), endianness);
 	} else {
-		if (bytes.size() < meta<T>::SizeBytes) throw std::runtime_error("loads: buffer is too small");
-		meta<T>::loads(bytes.subspan(0, meta<T>::SizeBytes), value, endianness);
+		meta<T>::loads(bytes, value, endianness);
 	}
 }
 
 template<ConstantSizeMeta T>
-constexpr void loads(std::span<const std::uint8_t> bytes, T&& value, std::endian endianness = std::endian::big) {
+constexpr void
+loads(std::span<const std::uint8_t, SizeBytes<T>> bytes, T&& value, std::endian endianness = std::endian::big) {
 	return loads<T, const std::uint8_t>(bytes, std::forward<T>(value), endianness);
 }
 
 template<ConstantSizeMeta T, ByteLike B>
-constexpr T loads(std::span<B> bytes, std::endian endianness = std::endian::big) {
+constexpr T loads(std::span<B, SizeBytes<T>> bytes, std::endian endianness = std::endian::big) {
 	T value;
 	loads(bytes, value, endianness);
 	return value;
 }
 
 template<HasMeta T, ByteLike B>
-constexpr void dumps(std::span<B> bytes, T const& value, std::endian endianness = std::endian::big) {
+	requires(not std::is_const_v<B>)
+constexpr void dumps(std::span<B, SizeBytes<T>> bytes, T const& value, std::endian endianness = std::endian::big) {
 	if constexpr (HasProxyMeta<T>) {
 		dumps(bytes, meta<T>::proxy(value), endianness);
 	} else {
-		if (bytes.size() < meta<T>::SizeBytes) throw std::runtime_error("dumps: buffer is too small");
-		meta<T>::dumps(bytes.subspan(0, meta<T>::SizeBytes), value, endianness);
+		meta<T>::dumps(bytes, value, endianness);
 	}
 }
 
@@ -275,9 +271,7 @@ struct meta<T> {
 
 	using UnsignedType = std::make_unsigned_t<T>;
 
-	static constexpr void loads(std::span<uint8_t const> bytes, T& value, std::endian endianness) {
-		assert(bytes.size() == SizeBytes);
-
+	static constexpr void loads(std::span<uint8_t const, SizeBytes> bytes, T& value, std::endian endianness) {
 		std::array<uint8_t, SizeBytes> bytes_ = {};
 		std::ranges::copy(bytes, bytes_.data());
 		value = std::bit_cast<T>(bytes_);
@@ -285,103 +279,24 @@ struct meta<T> {
 		if (endianness != std::endian::native) value = std::byteswap(value);
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, T value, std::endian endianness) {
-		assert(bytes.size() == SizeBytes);
-
+	static constexpr void dumps(std::span<uint8_t, SizeBytes> bytes, T value, std::endian endianness) {
 		if (endianness != std::endian::native) value = std::byteswap(value);
 		auto bytes_ = std::bit_cast<std::array<uint8_t, SizeBytes>>(value);
 		std::ranges::copy(bytes_, bytes.data());
 	}
-
-	// 	static constexpr void loads(T& value, std::span<uint8_t const> bytes, std::endian endianness) {
-	// 		assert(bytes.size() == SizeBytes);
-
-	// 		if (std::endian::native == endianness) {
-	// 			auto data = std::bit_cast<std::array<uint8_t, SizeBytes>>(value);
-	// 			std::ranges::copy(data, bytes.data());
-	// 		} else {
-	// 			if constexpr (SizeBytes == 1) {
-	// 				value = std::bit_cast<T>(bytes[0]);
-	// 			} else {
-	// 				auto intermediate = std::bit_cast<UnsignedType>(value);
-
-	// #ifdef _MSC_VER
-	// 				if constexpr (SizeBytes == 2) {
-	// 					value = std::bit_cast<T>(_byteswap_ushort(intermediate));
-	// 				} else if constexpr (SizeBytes == 4) {
-	// 					value = std::bit_cast<T>(_byteswap_ulong(intermediate));
-	// 				} else if constexpr (SizeBytes == 8) {
-	// 					value = std::bit_cast<T>(_byteswap_uint64(intermediate));
-	// 				} else {
-	// 					static_assert(false);
-	// 				}
-	// #else
-	// 				if constexpr (SizeBytes == 2) {
-	// 					value = std::bit_cast<T>(__builtin_bswap16(intermediate));
-	// 				} else if constexpr (SizeBytes == 4) {
-	// 					value = std::bit_cast<T>(__builtin_bswap32(intermediate));
-	// 				} else if constexpr (SizeBytes == 8) {
-	// 					value = std::bit_cast<T>(__builtin_bswap64(intermediate));
-	// 				} else {
-	// 					static_assert(false);
-	// 				}
-	// #endif
-	// 			}
-	// 		}
-	// 	}
-
-	// 	static constexpr void dumps(T value, std::span<uint8_t> bytes, std::endian endianness) {
-	// 		assert(bytes.size() == SizeBytes);
-
-	// 		if (std::endian::native == endianness) {
-	// 			auto data = std::bit_cast<std::array<uint8_t, SizeBytes>>(value);
-	// 			std::ranges::copy(data, bytes.data());
-	// 		} else {
-	// 			if constexpr (SizeBytes == 1) {
-	// 				bytes[0] = value;
-	// 			} else {
-	// 				UnsignedType data = 0;
-
-	// #ifdef _MSC_VER
-	// 				if constexpr (SizeBytes == 2) {
-	// 					data = _byteswap_ushort(std::bit_cast<UnsignedType>(value));
-	// 				} else if constexpr (SizeBytes == 4) {
-	// 					data = _byteswap_ulong(std::bit_cast<UnsignedType>(value));
-	// 				} else if constexpr (SizeBytes == 8) {
-	// 					data = _byteswap_uint64(std::bit_cast<UnsignedType>(value));
-	// 				} else {
-	// 					static_assert(false);
-	// 				}
-	// #else
-	// 				if constexpr (SizeBytes == 2) {
-	// 					data = __builtin_bswap16(std::bit_cast<UnsignedType>(value));
-	// 				} else if constexpr (SizeBytes == 4) {
-	// 					data = __builtin_bswap32(std::bit_cast<UnsignedType>(value));
-	// 				} else if constexpr (SizeBytes == 8) {
-	// 					data = __builtin_bswap64(std::bit_cast<UnsignedType>(value));
-	// 				} else {
-	// 					static_assert(false);
-	// 				}
-
-	// #endif
-
-	// 				memcpy(bytes.data(), &data, SizeBytes);
-	// 			}
-	// 		}
-	// 	}
 };
 
 template<>
 struct meta<bool> {
 	static constexpr const size_t SizeBytes = 1;
 
-	static constexpr void loads(std::span<uint8_t const> bytes, bool& value, std::endian endianness) {
+	static constexpr void loads(std::span<uint8_t const, SizeBytes> bytes, bool& value, std::endian endianness) {
 		uint8_t temp;
 		serialize::loads(bytes, temp, endianness);
 		value = temp;
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, bool value, std::endian endianness) {
+	static constexpr void dumps(std::span<uint8_t, SizeBytes> bytes, bool value, std::endian endianness) {
 		serialize::dumps(bytes, value, endianness);
 	}
 };
@@ -410,13 +325,13 @@ struct meta<T> {
 	static constexpr const size_t SizeBytes = sizeof(T);
 	using UnderlyingType = std::underlying_type_t<T>;
 
-	static constexpr void loads(std::span<uint8_t const> bytes, T& value, std::endian endianness) {
+	static constexpr void loads(std::span<uint8_t const, SizeBytes> bytes, T& value, std::endian endianness) {
 		UnderlyingType temp = 0;
 		serialize::loads(bytes, temp, endianness);
 		value = static_cast<T>(temp);
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, T value, std::endian endianness) {
+	static constexpr void dumps(std::span<uint8_t, SizeBytes> bytes, T value, std::endian endianness) {
 		serialize::dumps(bytes, static_cast<UnderlyingType>(value), endianness);
 	}
 };
@@ -440,24 +355,23 @@ template<BoundedNDArray T>
 	requires ConstantSizeMeta<std::remove_extent_t<T>>
 struct meta<T> {
 	using ValueType = std::remove_extent_t<T>;
-	static constexpr const size_t SizeBytes = meta<ValueType>::SizeBytes * std::extent_v<T>;
+	static constexpr const size_t ItemSizeBytes = serialize::SizeBytes<ValueType>;
+	static constexpr const size_t SizeBytes = ItemSizeBytes * std::extent_v<T>;
 
-	static constexpr void loads(std::span<uint8_t const> bytes, T& value, std::endian endianness) {
-		assert(bytes.size() == SizeBytes);
-
+	static constexpr void loads(std::span<uint8_t const, SizeBytes> bytes, T& value, std::endian endianness) {
 		for (size_t i = 0; i < std::extent_v<T>; ++i) {
 			serialize::loads(
-				bytes.subspan(meta<ValueType>::SizeBytes * i, meta<ValueType>::SizeBytes), value[i], endianness
+				std::span<uint8_t const, ItemSizeBytes>{bytes.subspan(ItemSizeBytes * i, ItemSizeBytes)},
+				value[i],
+				endianness
 			);
 		}
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, T const& value, std::endian endianness) {
-		assert(bytes.size() == SizeBytes);
-
+	static constexpr void dumps(std::span<uint8_t, SizeBytes> bytes, T const& value, std::endian endianness) {
 		for (size_t i = 0; i < std::extent_v<T>; ++i) {
 			serialize::dumps(
-				bytes.subspan(meta<ValueType>::SizeBytes * i, meta<ValueType>::SizeBytes), value[i], endianness
+				std::span<uint8_t, ItemSizeBytes>{bytes.subspan(ItemSizeBytes * i, ItemSizeBytes)}, value[i], endianness
 			);
 		}
 	}
@@ -550,27 +464,31 @@ template<ConstantSizeTupleLike T>
 struct meta<T> {
 	static constexpr const size_t SizeBytes = _tuple_size_bytes_impl<T>();
 
-	static constexpr void loads(std::span<uint8_t const> bytes, T& value, std::endian endianness) {
-		assert(bytes.size() == SizeBytes);
-
+	static constexpr void loads(std::span<uint8_t const, SizeBytes> bytes, T& value, std::endian endianness) {
 		size_t offset = 0;
 		tuple_for_each(
 			[&](auto&& item) {
-				serialize::loads(bytes.subspan(offset, serialize::SizeBytes<decltype(item)>), item, endianness);
-				offset += serialize::SizeBytes<decltype(item)>;
+				constexpr size_t ItemSizeBytes = serialize::SizeBytes<decltype(item)>;
+
+				serialize::loads(
+					std::span<uint8_t const, ItemSizeBytes>{bytes.subspan(offset, ItemSizeBytes)}, item, endianness
+				);
+				offset += ItemSizeBytes;
 			},
 			value
 		);
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, T const& value, std::endian endianness) {
-		assert(bytes.size() == SizeBytes);
-
+	static constexpr void dumps(std::span<uint8_t, SizeBytes> bytes, T const& value, std::endian endianness) {
 		size_t offset = 0;
 		tuple_for_each(
 			[&](auto&& item) {
-				serialize::dumps(bytes.subspan(offset, serialize::SizeBytes<decltype(item)>), item, endianness);
-				offset += serialize::SizeBytes<decltype(item)>;
+				constexpr size_t ItemSizeBytes = serialize::SizeBytes<decltype(item)>;
+
+				serialize::dumps(
+					std::span<uint8_t, ItemSizeBytes>{bytes.subspan(offset, ItemSizeBytes)}, item, endianness
+				);
+				offset += ItemSizeBytes;
 			},
 			value
 		);
@@ -593,31 +511,28 @@ struct meta<Resized<N, T>> {
 	using type = std::remove_const_t<T>;
 	static constexpr const size_t SizeBytes = N;
 
-	static constexpr void loads(std::span<uint8_t const> bytes, Resized<N, T>& value, std::endian endianness) {
-		assert(bytes.size() == SizeBytes);
+	static constexpr void loads(std::span<uint8_t const, N> bytes, Resized<N, T>& value, std::endian endianness) {
 		auto& value_ = value.get();
 
 		// Copy source data to a mutable buffer
 		std::array<uint8_t, std::max(sizeof(T), N)> buffer = {};
-		std::span<uint8_t> actual_data;
-		std::span<uint8_t> to_load;
-		std::span<uint8_t> to_discard;
-		uint8_t* highest_byte = nullptr;
+		std::span<uint8_t, std::max(sizeof(T), N)> buffer_{buffer};
 
-		if (endianness == std::endian::big) {
-			actual_data = std::span{buffer}.subspan(buffer.size() - N, N);
-			highest_byte = &actual_data[0];
+		// spans below first initialized for std::endian::big
+		// actual N bytes
+		auto to_copy = buffer_.template subspan<buffer.size() - N, N>();
+		auto to_load = buffer_.template subspan<buffer.size() - sizeof(T), sizeof(T)>();
+		auto to_discard = buffer_.template subspan<0, buffer.size() - sizeof(T)>();
+		uint8_t* highest_byte = &to_copy[0];
 
-			to_load = std::span{buffer}.subspan(buffer.size() - sizeof(T), sizeof(T));
-			to_discard = std::span{buffer}.subspan(0, buffer.size() - sizeof(T));
-		} else {
-			actual_data = std::span{buffer}.subspan(0, N);
-			highest_byte = &actual_data[N - 1];
+		if (endianness == std::endian::little) {
+			to_copy = buffer_.template subspan<0, N>();
+			highest_byte = &to_copy[N - 1];
 
-			to_load = std::span{buffer}.subspan(0, sizeof(T));
-			to_discard = std::span{buffer}.subspan(sizeof(T), buffer.size() - sizeof(T));
+			to_load = buffer_.template subspan<0, sizeof(T)>();
+			to_discard = buffer_.template subspan<sizeof(T), buffer.size() - sizeof(T)>();
 		}
-		std::ranges::copy(bytes, actual_data.data());
+		std::ranges::copy(bytes, to_copy.data());
 
 		// Remove and save sign bit from data (it's in the wrong place for auto loading)
 		bool negative = false;
@@ -638,10 +553,9 @@ struct meta<Resized<N, T>> {
 		if (negative) value_ |= std::numeric_limits<type>::min();  // add sign bit
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, Resized<N, T> value, std::endian endianness)
+	static constexpr void dumps(std::span<uint8_t, N> bytes, Resized<N, T> value, std::endian endianness)
 		requires std::unsigned_integral<T>
 	{
-		assert(bytes.size() == SizeBytes);
 		type value_ = value.get();
 
 		if constexpr (N < sizeof(T)) {
@@ -659,22 +573,24 @@ struct meta<Resized<N, T>> {
 		}
 
 		std::array<uint8_t, std::max(sizeof(T), N)> buffer = {};
-		std::span<uint8_t> to_write;  // of size sizeof(T) to write intermediate value
-		std::span<uint8_t> to_copy;   // of size N to copy to output
 
-		if (endianness == std::endian::big) {
-			to_write = std::span{buffer}.subspan(buffer.size() - sizeof(T), sizeof(T));
-			to_copy = std::span{buffer}.subspan(buffer.size() - N, N);
-		} else {
-			to_write = std::span{buffer}.subspan(0, sizeof(T));
-			to_copy = std::span{buffer}.subspan(0, N);
+		// values below first initialized for std::endian::big
+		// to write intermediate value
+		std::span<uint8_t, sizeof(T)> to_write =
+			std::span{buffer}.template subspan<buffer.size() - sizeof(T), sizeof(T)>();
+		// to copy to output
+		std::span<uint8_t, N> to_copy = std::span{buffer}.template subspan<buffer.size() - N, N>();
+
+		if (endianness == std::endian::little) {
+			to_write = std::span{buffer}.template subspan<0, sizeof(T)>();
+			to_copy = std::span{buffer}.template subspan<0, N>();
 		}
 
 		serialize::dumps(to_write, value_, endianness);
 		std::ranges::copy(to_copy, bytes.data());
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, Resized<N, T> value, std::endian endianness)
+	static constexpr void dumps(std::span<uint8_t, N> bytes, Resized<N, T> value, std::endian endianness)
 		requires std::signed_integral<T>
 	{
 		using IntermediateType = uint<sizeof(T)>;
@@ -707,12 +623,12 @@ struct meta<std::chrono::duration<Rep, Period>> {
 	using T = std::chrono::duration<Rep, Period>;
 	static constexpr const size_t SizeBytes = sizeof(Rep);
 
-	static constexpr void loads(std::span<uint8_t const> bytes, T& value, std::endian endianness) {
+	static constexpr void loads(std::span<uint8_t const, SizeBytes> bytes, T& value, std::endian endianness) {
 		auto count = serialize::loads<Rep>(bytes, endianness);
 		value = T{count};
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, T value, std::endian endianness) {
+	static constexpr void dumps(std::span<uint8_t, SizeBytes> bytes, T value, std::endian endianness) {
 		serialize::dumps<Rep>(bytes, value.count(), endianness);
 	}
 };
@@ -722,12 +638,12 @@ struct meta<std::chrono::time_point<Clock, Duration>> {
 	using T = std::chrono::time_point<Clock, Duration>;
 	static constexpr const size_t SizeBytes = serialize::SizeBytes<Duration>;
 
-	static constexpr void loads(std::span<uint8_t const> bytes, T& value, std::endian endianness) {
+	static constexpr void loads(std::span<uint8_t const, SizeBytes> bytes, T& value, std::endian endianness) {
 		auto time_since_epoch = serialize::loads<Duration>(bytes, endianness);
 		value = T{time_since_epoch};
 	}
 
-	static constexpr void dumps(std::span<uint8_t> bytes, T value, std::endian endianness) {
+	static constexpr void dumps(std::span<uint8_t, SizeBytes> bytes, T value, std::endian endianness) {
 		serialize::dumps<Duration>(bytes, value.time_since_epoch(), endianness);
 	}
 };

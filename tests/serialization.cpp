@@ -8,7 +8,7 @@
 template<typename T, std::size_t N>
 void test_resized(T expected_value, std::array<std::uint8_t, N> const& expected_bytes) {
 	std::array<std::uint8_t, N> actual_bytes = {};
-	serialize::dumps(std::span<std::uint8_t>{actual_bytes}, serialize::resized<N>(expected_value));
+	serialize::dumps(std::span<std::uint8_t, N>{actual_bytes}, serialize::resized<N>(expected_value));
 
 	CHECK(actual_bytes == expected_bytes);
 
