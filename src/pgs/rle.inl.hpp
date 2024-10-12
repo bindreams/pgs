@@ -1,6 +1,6 @@
 #pragma once
-#include "rl_encoding.hpp"
-#include "serialize.hpp"
+#include "rle.hpp"
+#include "serialization.hpp"
 
 #include <algorithm>
 #include <format>
@@ -10,11 +10,13 @@
 #include <unordered_map>
 #include <vector>
 
+namespace pgs::rle {
+
 inline Bitmap<uint8_t> decode(std::span<uint8_t const> data) {
 	if (data.empty()) throw std::runtime_error("data buffer is empty");
 
-	auto width = serialize::loads<std::uint16_t>(data.subspan<0, 2>());
-	auto height = serialize::loads<std::uint16_t>(data.subspan<2, 2>());
+	auto width = serial::loads<uint16_t>(data.subspan<0, 2>());
+	auto height = serial::loads<uint16_t>(data.subspan<2, 2>());
 	auto total_size = static_cast<std::size_t>(width) * height;
 	data = data.subspan(4);
 
@@ -107,8 +109,8 @@ inline std::vector<uint8_t> encode(Bitmap<uint8_t> const& bitmap) {
 	std::vector<uint8_t> result;
 	result.resize(4);
 
-	serialize::dumps(std::span{result}.subspan<0, 2>(), bitmap.width());
-	serialize::dumps(std::span{result}.subspan<2, 2>(), bitmap.height());
+	serial::dumps(std::span{result}.subspan<0, 2>(), bitmap.width());
+	serial::dumps(std::span{result}.subspan<2, 2>(), bitmap.height());
 
 	for (std::size_t i = 0; i < bitmap.rows(); ++i) {
 		auto row = bitmap[i];
@@ -164,3 +166,5 @@ inline std::vector<uint8_t> encode(Bitmap<uint8_t> const& bitmap) {
 
 	return result;
 }
+
+}  // namespace pgs::rle

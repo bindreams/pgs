@@ -5,7 +5,9 @@
 #include <unordered_map>
 #include <vector>
 
-template<typename T = std::uint8_t>
+namespace pgs {
+
+template<typename T = uint8_t>
 struct Bitmap {
 	Bitmap(uint16_t width, uint16_t height) : m_data(static_cast<std::size_t>(width) * height), m_row_size(width) {}
 
@@ -39,6 +41,8 @@ private:
 	uint16_t m_row_size;
 };
 
+namespace rle {
+
 inline Bitmap<uint8_t> decode(std::span<uint8_t const> data);
 
 template<typename T>
@@ -62,4 +66,7 @@ inline std::vector<uint8_t> encode(Bitmap<T> const& bitmap, std::unordered_map<T
 	return encode(indexed);
 }
 
-#include "rl_encoding.inl.hpp"
+}  // namespace rle
+}  // namespace pgs
+
+#include "rle.inl.hpp"

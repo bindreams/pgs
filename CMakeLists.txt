@@ -8,7 +8,7 @@ project(pgs)
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "src/*.cpp" "src/*.hpp")
 add_library(libpgs INTERFACE)
 target_sources(libpgs INTERFACE ${sources})
-target_include_directories(libpgs INTERFACE "src/pgs")
+target_include_directories(libpgs INTERFACE "src")
 target_compile_features(libpgs INTERFACE cxx_std_23)
 set_target_properties(libpgs PROPERTIES
 	MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"

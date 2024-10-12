@@ -3,16 +3,19 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 
+namespace pgs {
+
 template<>
-inline colormodels::YCbCrA_BT709 convert<colormodels::YCbCrA_BT709, colormodels::Rgba>(colormodels::Rgba color) {
-	auto [y, cb, cr] = convert<colormodels::YCbCr_BT709>(static_cast<colormodels::Rgb>(color));
+inline colormodels::YCbCrA_BT709 color_cast<colormodels::YCbCrA_BT709, colormodels::Rgba>(colormodels::Rgba color) {
+	auto [y, cb, cr] = color_cast<colormodels::YCbCr_BT709>(static_cast<colormodels::Rgb>(color));
 	return {y, cb, cr, color.alpha};
 }
 
 template<>
-inline colormodels::YCbCr_BT709 convert<colormodels::YCbCr_BT709, colormodels::Rgb>(colormodels::Rgb color) {
+inline colormodels::YCbCr_BT709 color_cast<colormodels::YCbCr_BT709, colormodels::Rgb>(colormodels::Rgb color) {
 	constexpr const std::array<std::array<double, 3>, 3> matrix = {{
 		{+0.183, +0.614, +0.062},
 		{-0.101, -0.339, +0.439},
@@ -43,20 +46,20 @@ inline colormodels::YCbCr_BT709 convert<colormodels::YCbCr_BT709, colormodels::R
 	ycbcr[2] = std::clamp(ycbcr[2], 16.0, 240.0);
 
 	return {
-		static_cast<std::uint8_t>(ycbcr[0]),
-		static_cast<std::uint8_t>(ycbcr[1]),
-		static_cast<std::uint8_t>(ycbcr[2]),
+		static_cast<uint8_t>(ycbcr[0]),
+		static_cast<uint8_t>(ycbcr[1]),
+		static_cast<uint8_t>(ycbcr[2]),
 	};
 }
 
 template<>
-inline colormodels::Rgba convert<colormodels::Rgba, colormodels::YCbCrA_BT709>(colormodels::YCbCrA_BT709 color) {
-	auto [red, green, blue] = convert<colormodels::Rgb>(static_cast<colormodels::YCbCr_BT709>(color));
+inline colormodels::Rgba color_cast<colormodels::Rgba, colormodels::YCbCrA_BT709>(colormodels::YCbCrA_BT709 color) {
+	auto [red, green, blue] = color_cast<colormodels::Rgb>(static_cast<colormodels::YCbCr_BT709>(color));
 	return {red, green, blue, color.alpha};
 }
 
 template<>
-inline colormodels::Rgb convert<colormodels::Rgb, colormodels::YCbCr_BT709>(colormodels::YCbCr_BT709 color) {
+inline colormodels::Rgb color_cast<colormodels::Rgb, colormodels::YCbCr_BT709>(colormodels::YCbCr_BT709 color) {
 	// Verify that the color passed falls within the YCbCr limits
 	assert(16 <= color.y and color.y <= 235);
 	assert(16 <= color.cb and color.cb <= 240);
@@ -90,8 +93,10 @@ inline colormodels::Rgb convert<colormodels::Rgb, colormodels::YCbCr_BT709>(colo
 	for (auto& color : rgb) color = std::clamp(color, 0.0, 255.0);
 
 	return {
-		static_cast<std::uint8_t>(rgb[0]),
-		static_cast<std::uint8_t>(rgb[1]),
-		static_cast<std::uint8_t>(rgb[2]),
+		static_cast<uint8_t>(rgb[0]),
+		static_cast<uint8_t>(rgb[1]),
+		static_cast<uint8_t>(rgb[2]),
 	};
 }
+
+}  // namespace pgs
