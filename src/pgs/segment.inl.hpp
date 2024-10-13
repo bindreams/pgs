@@ -24,7 +24,7 @@ struct serial::meta<PresentationComposition::CompositionObject> {
 		using CroppedFlag = PresentationComposition::CompositionObject::CroppedFlag;
 
 		CroppedFlag cropped_flag;
-		serial::load(stream, std::tie(obj.id, obj.window_id, cropped_flag, obj.x, obj.y), endianness);
+		serial::load(stream, std::tie(obj.object_id, obj.window_id, cropped_flag, obj.x, obj.y), endianness);
 
 		if (cropped_flag == CroppedFlag::True) {
 			if (stream.peek() == EOF) {
@@ -46,7 +46,7 @@ struct serial::meta<PresentationComposition::CompositionObject> {
 		CroppedFlag cropped_flag = CroppedFlag::False;
 		if (obj.crop.has_value()) cropped_flag = CroppedFlag::True;
 
-		serial::dump(stream, std::tie(obj.id, obj.window_id, cropped_flag, obj.x, obj.y), endianness);
+		serial::dump(stream, std::tie(obj.object_id, obj.window_id, cropped_flag, obj.x, obj.y), endianness);
 		if (cropped_flag == CroppedFlag::True) {
 			serial::dump(stream, obj.crop.value(), endianness);
 		}

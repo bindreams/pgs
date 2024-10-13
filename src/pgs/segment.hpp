@@ -44,7 +44,7 @@ struct PresentationComposition : SegmentHeader {
 			True = 0x40,
 		};
 
-		uint16_t id = 0;
+		uint16_t object_id = 0;
 		uint8_t window_id = 0;
 		uint16_t x = 0;
 		uint16_t y = 0;
