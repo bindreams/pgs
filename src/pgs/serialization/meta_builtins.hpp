@@ -101,7 +101,7 @@ struct meta<T> {
 };
 
 template<BoundedNDArray T>
-	requires ConstantSizeMeta<std::remove_extent_t<T>>
+	requires HasConstantSizeMeta<std::remove_extent_t<T>>
 struct meta<T> {
 	using ValueType = std::remove_extent_t<T>;
 	static constexpr const size_t ItemSizeBytes = serial::SizeBytes<ValueType>;
@@ -155,7 +155,7 @@ consteval bool each_element_has_constant_size_meta() {
 	if constexpr (I == std::tuple_size_v<T>) {
 		return true;
 	} else {
-		return ConstantSizeMeta<std::tuple_element_t<I, T>> and each_element_has_constant_size_meta<T, I + 1>();
+		return HasConstantSizeMeta<std::tuple_element_t<I, T>> and each_element_has_constant_size_meta<T, I + 1>();
 	}
 }
 }  // namespace impl
@@ -195,7 +195,7 @@ struct meta<T> {
 		if constexpr (I == std::tuple_size_v<T_>) {
 			return 0;
 		} else {
-			static_assert(ConstantSizeMeta<std::tuple_element_t<I, T_>>);
+			static_assert(HasConstantSizeMeta<std::tuple_element_t<I, T_>>);
 			return serial::SizeBytes<std::tuple_element_t<I, T_>> + size_bytes_impl<T_, I + 1>();
 		}
 	}
