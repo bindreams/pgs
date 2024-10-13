@@ -135,6 +135,14 @@ struct serial::meta<Segment> {
 		std::visit([&](auto& self) { self.dump_body(body_stream); }, value);
 
 		char magic_bytes[2] = {'P', 'G'};
+		if (body_stream.tellp() > std::numeric_limits<uint16_t>::max()) {
+			throw PgsWriteError(std::format(
+				"segment body size is {}, which is greater than maximum of {}",
+				static_cast<std::streamoff>(body_stream.tellp()),
+				std::numeric_limits<uint16_t>::max()
+			));
+		}
+
 		uint16_t segment_size = body_stream.tellp();
 		auto segment_type = value.type();
 

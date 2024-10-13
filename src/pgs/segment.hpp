@@ -68,15 +68,6 @@ struct PresentationComposition : SegmentHeader {
 
 	template<serial::OutputStream S>
 	void dump_body(S& stream) const;
-
-private:
-	friend struct Segment;
-
-	size_t size_bytes_impl() const {
-		constexpr const uint16_t main_size = 11;
-		constexpr const uint16_t object_size = 16;
-		return main_size + (object_size * composition_objects.size());
-	}
 };
 
 DEFINE_ENUM_BITWISE_OPERATORS(PresentationComposition::State);
@@ -95,15 +86,6 @@ struct WindowDefinition : SegmentHeader {
 	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serial::OutputStream S>
 	void dump_body(S& stream) const;
-
-private:
-	friend struct Segment;
-
-	size_t size_bytes_impl() const {
-		constexpr const uint16_t main_size = 1;
-		constexpr const uint16_t window_size = 9;
-		return main_size + (window_size * windows.size());
-	}
 };
 
 struct PaletteDefinition : SegmentHeader {
@@ -123,14 +105,6 @@ struct PaletteDefinition : SegmentHeader {
 	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serial::OutputStream S>
 	void dump_body(S& stream) const;
-
-private:
-	friend struct Segment;
-	size_t size_bytes_impl() const {
-		constexpr const uint16_t main_size = 2;
-		constexpr const uint16_t entry_size = 5;
-		return main_size + (entry_size * entries.size());
-	}
 };
 
 struct ObjectDefinition : SegmentHeader {
@@ -148,25 +122,12 @@ struct ObjectDefinition : SegmentHeader {
 	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serial::OutputStream S>
 	void dump_body(S& stream) const;
-
-private:
-	friend struct Segment;
-
-	size_t size_bytes_impl() const {
-		constexpr const uint16_t main_size = 11;
-		return main_size + data.size();
-	}
 };
 
 struct EndOfDisplaySet : SegmentHeader {
 	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serial::OutputStream S>
 	void dump_body(S& stream) const;
-
-private:
-	friend struct Segment;
-
-	size_t size_bytes_impl() const { return 0; }
 };
 
 DEFINE_ENUM_BITWISE_OPERATORS(ObjectDefinition::SequenceFlag);
@@ -197,12 +158,6 @@ struct Segment
 
 	SegmentHeader const& header() const {
 		return std::visit([](auto& self) -> SegmentHeader const& { return self; }, *this);
-	}
-
-	uint16_t size_bytes() const {
-		auto result = std::visit([](auto& self) { return self.size_bytes_impl(); }, *this);
-		assert(result <= std::numeric_limits<uint16_t>::max());
-		return static_cast<uint16_t>(result);
 	}
 
 	Type type() const noexcept {
