@@ -61,7 +61,7 @@ struct serial::meta<WindowDefinition::Window> {
 };
 
 template<>
-struct serial::meta<PaletteDefinition::Entry> {
+struct serial::meta<PaletteDefinition::EntryRepr> {
 	static constexpr auto proxy = [](auto& val) { return std::tie(val.id, val.y, val.cr, val.cb, val.alpha); };
 };
 
@@ -166,6 +166,9 @@ inline Segment PresentationComposition::load_body(SegmentHeader const& header, s
 
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
 
+	PaletteUpdateFlag palette_update_flag = PaletteUpdateFlag::False;
+	uint8_t palette_update_id = 0;
+
 	uint8_t n_composition_objects = 0;
 	serial::load(
 		stream,
@@ -175,11 +178,14 @@ inline Segment PresentationComposition::load_body(SegmentHeader const& header, s
 			obj.framerate,
 			obj.number,
 			obj.state,
-			obj.palette_update,
-			obj.palette_id,
+			palette_update_flag,
+			palette_update_id,
 			n_composition_objects
 		)
 	);
+
+	if (palette_update_flag == PaletteUpdateFlag::True) obj.update_palette_id = palette_update_id;
+	else obj.update_palette_id = std::nullopt;
 
 	obj.composition_objects.resize(n_composition_objects);
 	for (auto& composition_object : obj.composition_objects) serial::load(stream, composition_object);
@@ -197,8 +203,16 @@ inline void PresentationComposition::dump_body(S& stream) const {
 	}
 
 	uint8_t n_composition_objects = composition_objects.size();
+	PaletteUpdateFlag palette_update_flag = PaletteUpdateFlag::False;
+	uint8_t palette_update_id = 0;
+	if (update_palette_id.has_value()) {
+		palette_update_flag = PaletteUpdateFlag::True;
+		palette_update_id = *update_palette_id;
+	}
+
 	serial::dump(
-		stream, std::tie(width, height, framerate, number, state, palette_update, palette_id, n_composition_objects)
+		stream,
+		std::tie(width, height, framerate, number, state, palette_update_flag, palette_update_id, n_composition_objects)
 	);
 
 	for (auto& composition_object : composition_objects) serial::dump(stream, composition_object);
@@ -238,10 +252,14 @@ inline Segment PaletteDefinition::load_body(SegmentHeader const& header, std::sp
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
 
 	serial::load(stream, std::tie(obj.id, obj.version));
-	std::size_t n_entries = (bytes.size() - static_cast<std::size_t>(stream.tellg())) / serial::SizeBytes<Entry>;
+	std::size_t n_entries = (bytes.size() - static_cast<std::size_t>(stream.tellg())) / serial::SizeBytes<EntryRepr>;
 
-	obj.entries.resize(n_entries);
-	for (auto& entry : obj.entries) serial::load(stream, entry);
+	obj.clut.reserve(n_entries);
+
+	for (size_t i = 0; i < n_entries; ++i) {
+		auto entry = serial::load<EntryRepr>(stream);
+		obj.clut[entry.id] = {entry.y, entry.cb, entry.cr, entry.alpha};
+	}
 
 	return result;
 }
@@ -249,6 +267,15 @@ inline Segment PaletteDefinition::load_body(SegmentHeader const& header, std::sp
 template<serial::OutputStream S>
 inline void PaletteDefinition::dump_body(S& stream) const {
 	serial::dump(stream, std::tie(id, version));
+	std::vector<EntryRepr> entries;
+	entries.reserve(clut.size());
+
+	for (auto& [i, color] : clut) {
+		entries.emplace_back(i, color.y, color.cr, color.cb, color.alpha);
+	}
+
+	std::ranges::sort(entries, [](auto& lhs, auto& rhs) { return lhs.id < rhs.id; });
+
 	for (auto& entry : entries) serial::dump(stream, entry);
 }
 

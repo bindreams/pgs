@@ -35,8 +35,8 @@ struct PresentationComposition : SegmentHeader {
 	enum class PaletteUpdateFlag : uint8_t {
 		False = 0x0,
 		True = 0x80,
-	} palette_update = PaletteUpdateFlag::False;
-	uint8_t palette_id = 0;
+	};
+	std::optional<uint8_t> update_palette_id = std::nullopt;
 
 	struct CompositionObject {
 		enum class CroppedFlag : uint8_t {
@@ -92,15 +92,16 @@ struct PaletteDefinition : SegmentHeader {
 	uint8_t id = 0;
 	uint8_t version = 0;
 
-	struct Entry {
+	std::unordered_map<uint8_t, colormodels::YCbCrA_BT709> clut;  // color lookup table
+
+	/// Representation of a palette entry in the file
+	struct EntryRepr {
 		uint8_t id = 0;
 		uint8_t y = 0;      /// Luminance
 		uint8_t cr = 0;     /// Color Difference Red
 		uint8_t cb = 0;     /// Color Difference Blue
 		uint8_t alpha = 0;  /// Transparency
 	};
-
-	std::vector<Entry> entries;
 
 	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serial::OutputStream S>
@@ -176,7 +177,7 @@ template<>
 struct serial::meta<Segment>;
 
 template<>
-struct serial::meta<PaletteDefinition::Entry>;
+struct serial::meta<PaletteDefinition::EntryRepr>;
 
 template<>
 struct serial::meta<PresentationComposition::CompositionObject::Crop>;
