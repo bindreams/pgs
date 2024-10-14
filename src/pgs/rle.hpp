@@ -8,60 +8,144 @@
 namespace pgs {
 
 template<typename T = uint8_t>
-struct Bitmap {
-	Bitmap(uint16_t width, uint16_t height) : m_data(static_cast<std::size_t>(width) * height), m_row_size(width) {}
+struct BitmapView {
+	BitmapView(uint16_t width, uint16_t height, uint16_t row_stride, T* begin)
+		: m_data(begin), m_width(width), m_height(height), m_row_stride(row_stride) {}
 
-	Bitmap(uint16_t width, uint16_t height, std::vector<T> data) : m_data(std::move(data)), m_row_size(width) {
+	size_t size() const { return width() * height(); }
+
+	uint16_t width() const { return m_width; }
+	uint16_t height() const { return m_height; }
+
+	BitmapView crop(uint16_t x, uint16_t y, uint16_t width, uint16_t height) const {
+		assert(x + width <= m_width);
+		assert(y + height <= m_height);
+
+		return BitmapView{width, height, m_row_stride, &(*this)[x, y]};
+	}
+
+	template<std::constructible_from<T> U>
+	void assign(BitmapView<U> other) const {
+		using namespace std::ranges;
+		auto crop_width = std::min(width(), other.width());
+		auto crop_height = std::min(height(), other.height());
+
+		auto lhs = this->crop(0, 0, crop_width, crop_height);
+		auto rhs = other.crop(0, 0, crop_width, crop_height);
+
+		if (lhs.size() == 0) return;
+
+		if (&rhs[0, 0] < &lhs[0, 0] and &lhs[0, 0] < &rhs[rhs.width() - 1, rhs.height() - 1] + 1) {
+			// target memory starts in the middle of source memory. Copy backwards
+			for (int32_t y = crop_height - 1; y >= 0; --y) {
+				copy_backward(
+					std::span{rhs.m_data + y * rhs.m_row_stride, rhs.m_width}, lhs.m_data + y * lhs.m_row_stride
+				);
+			}
+		} else {
+			for (uint16_t y = 0; y < crop_height; ++y) {
+				copy(std::span{rhs.m_data + y * rhs.m_row_stride, rhs.m_width}, lhs.m_data + y * lhs.m_row_stride);
+			}
+		}
+	}
+
+	T& operator[](uint16_t x, uint16_t y) const {
+		assert(x < width());
+		assert(y < height());
+
+		return m_data[y * m_row_stride + x];
+	}
+
+	std::span<T> row(uint16_t y) const { return {&(*this)[0, y], m_width}; }
+
+	template<typename U>
+	friend struct BitmapView;
+
+private:
+	T* m_data;
+	uint16_t m_width;
+	uint16_t m_height;
+	uint16_t m_row_stride;
+};
+
+template<typename T = uint8_t>
+struct Bitmap {
+	Bitmap(uint16_t width, uint16_t height) : m_data(static_cast<std::size_t>(width) * height), m_width(width) {}
+
+	Bitmap(uint16_t width, uint16_t height, std::vector<T> data) : m_data(std::move(data)), m_width(width) {
 		assert(m_data.size() == static_cast<std::size_t>(width) * height);
 	}
 
-	uint16_t rows() const { return m_data.size() / columns(); }
-	uint16_t height() const { return rows(); }
-
-	uint16_t columns() const { return m_row_size; }
-	uint16_t width() const { return columns(); }
-
-	std::span<T> operator[](uint16_t row) { return std::span{m_data}.subspan(m_row_size * row, m_row_size); }
-	std::span<T const> operator[](uint16_t row) const {
-		return std::span{m_data}.subspan(m_row_size * row, m_row_size);
+	template<std::constructible_from<T> U>
+	Bitmap(BitmapView<U> other) : Bitmap(other.width(), other.height()) {
+		assign(other);
 	}
 
+	// core methods ----------------------------------------------------------------------------------------------------
 	T* data() { return m_data.data(); }
 	T const* data() const { return m_data.data(); }
 
 	std::size_t size() const { return m_data.size(); }
+	uint16_t width() const { return m_width; }
+	uint16_t height() const { return size() / m_width; }
 
+	// bitmap-native methods -------------------------------------------------------------------------------------------
 	auto begin() { return m_data.data(); }
 	auto begin() const { return m_data.data(); }
 	auto end() { return m_data.data() + m_data.size(); }
 	auto end() const { return m_data.data() + m_data.size(); }
 
+	BitmapView<T> view() { return BitmapView<T>{width(), height(), width(), data()}; }
+	BitmapView<T const> view() const { return BitmapView<T const>{width(), height(), width(), data()}; }
+	operator BitmapView<T>() { return view(); }
+	operator BitmapView<T>() const { return view(); }
+
+	// view-like methods -----------------------------------------------------------------------------------------------
+	template<std::constructible_from<T> U>
+	void assign(BitmapView<U> other) {
+		view().assign(other);
+	}
+
+	BitmapView<T> crop(uint16_t x, uint16_t y, uint16_t width, uint16_t height) {
+		return view().crop(x, y, width, height);
+	}
+
+	BitmapView<T const> crop(uint16_t x, uint16_t y, uint16_t width, uint16_t height) const {
+		return view().crop(x, y, width, height);
+	}
+
+	T& operator[](uint16_t x, uint16_t y) { return view()[x, y]; }
+	T const& operator[](uint16_t x, uint16_t y) const { return view()[x, y]; }
+
+	std::span<T> row(uint16_t y) { return view().row(y); }
+	std::span<T const> row(uint16_t y) const { return view().row(y); }
+
 private:
 	std::vector<T> m_data;
-	uint16_t m_row_size;
+	uint16_t m_width;
 };
 
 namespace rle {
 
 inline Bitmap<uint8_t> decode(std::span<uint8_t const> data);
 
-template<typename T>
-inline Bitmap<T> decode(std::span<uint8_t const> data, std::array<T, 256> palette) {
+template<typename T, typename F>
+inline Bitmap<T> decode(std::span<uint8_t const> data, F&& palette) {
 	Bitmap indexed = decode(data);
 	std::vector<T> result;
 	result.reserve(indexed.size());
 
-	std::ranges::transform(indexed, std::back_inserter(result), [&](uint8_t index) { return palette[index]; });
+	std::ranges::transform(indexed, std::back_inserter(result), [&](uint8_t index) { return palette(index); });
 
 	return Bitmap{indexed.width(), indexed.height(), std::move(result)};
 }
 
-inline std::vector<uint8_t> encode(Bitmap<uint8_t> const& bitmap);
+inline std::vector<uint8_t> encode(BitmapView<uint8_t> const& bitmap);
 
-template<typename T>
-inline std::vector<uint8_t> encode(Bitmap<T> const& bitmap, std::unordered_map<T, uint8_t> palette) {
+template<typename T, typename F>
+inline std::vector<uint8_t> encode(BitmapView<T> const& bitmap, F&& palette) {
 	Bitmap<uint8_t> indexed{bitmap.width(), bitmap.height()};
-	std::ranges::transform(bitmap, indexed.begin(), [&](T const& value) { return palette[value]; });
+	std::ranges::transform(bitmap, indexed.begin(), [&](T const& value) { return palette(value); });
 
 	return encode(indexed);
 }

@@ -105,24 +105,24 @@ inline Bitmap<uint8_t> decode(std::span<uint8_t const> data) {
 	return Bitmap{width, height, std::move(result)};
 }
 
-inline std::vector<uint8_t> encode(Bitmap<uint8_t> const& bitmap) {
+inline std::vector<uint8_t> encode(BitmapView<uint8_t> const& bitmap) {
 	std::vector<uint8_t> result;
 	result.resize(4);
 
 	serial::dumps(std::span{result}.subspan<0, 2>(), bitmap.width());
 	serial::dumps(std::span{result}.subspan<2, 2>(), bitmap.height());
 
-	for (std::size_t i = 0; i < bitmap.rows(); ++i) {
-		auto row = bitmap[i];
+	for (std::size_t y = 0; y < bitmap.height(); ++y) {
+		auto row = bitmap.row(y);
 
 		size_t n_same = 0;
-		for (size_t i = 0; i < row.size(); i += n_same) {
+		for (size_t x = 0; x < row.size(); x += n_same) {
 			// note: max allowed same pixels for packing is 16383
-			for (n_same = 1; i + n_same < row.size() and n_same <= 16383; ++n_same) {
-				if (row[i] != row[i + n_same]) break;
+			for (n_same = 1; x + n_same < row.size() and n_same <= 16383; ++n_same) {
+				if (row[x] != row[x + n_same]) break;
 			}
 
-			uint8_t color = row[i];
+			uint8_t color = row[x];
 
 			if (color == 0) {
 				if (n_same < 64) {
