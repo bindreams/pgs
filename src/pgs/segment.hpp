@@ -128,7 +128,6 @@ struct Segment
 		PresentationComposition = 0x16,
 		WindowDefinition = 0x17,
 		EndOfDisplaySet = 0x80,
-
 	};
 
 	SegmentHeader& header() {

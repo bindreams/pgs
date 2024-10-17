@@ -7,9 +7,7 @@
 
 #include "bitmap.hpp"
 
-namespace pgs {
-
-namespace rle {
+namespace pgs::rle {
 
 inline ByteBitmap decode(std::span<uint8_t const> data);
 
@@ -34,7 +32,6 @@ inline std::vector<uint8_t> encode(ByteBitmapView const& bitmap, F&& palette) {
 	return encode(indexed);
 }
 
-}  // namespace rle
-}  // namespace pgs
+}  // namespace pgs::rle
 
 #include "rle.inl.hpp"
