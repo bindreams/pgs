@@ -2,8 +2,10 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <unordered_map>
 #include <variant>
 
+#include "base.hpp"
 #include "serialization.hpp"
 #include "utility.hpp"
 
@@ -49,17 +51,10 @@ struct PresentationComposition : SegmentHeader {
 		uint16_t x = 0;
 		uint16_t y = 0;
 
-		struct Crop {
-			uint16_t x = 0;
-			uint16_t y = 0;
-			uint16_t width = 0;
-			uint16_t height = 0;
-		};
-
 		// Theoretically, the PGS format allows for multiple crop objects if the cropped flag is set, but does not
 		// explain how one should distinguish when the cropped objects list ends and the next composition object begins.
 		// I have never seen multiple crop objects in practice.
-		std::optional<Crop> crop = std::nullopt;
+		std::optional<Rect<uint16_t>> crop = std::nullopt;
 	};
 
 	std::vector<CompositionObject> composition_objects;
@@ -73,15 +68,7 @@ struct PresentationComposition : SegmentHeader {
 DEFINE_ENUM_BITWISE_OPERATORS(PresentationComposition::State);
 
 struct WindowDefinition : SegmentHeader {
-	struct Window {
-		uint8_t id = 0;
-		uint16_t x = 0;
-		uint16_t y = 0;
-		uint16_t width = 0;
-		uint16_t height = 0;
-	};
-
-	std::vector<Window> windows;
+	std::unordered_map<uint8_t, Rect<uint16_t>> windows;
 
 	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serial::OutputStream S>
@@ -93,15 +80,6 @@ struct PaletteDefinition : SegmentHeader {
 	uint8_t version = 0;
 
 	std::unordered_map<uint8_t, colormodels::YCbCrA_BT709> clut;  // color lookup table
-
-	/// Representation of a palette entry in the file
-	struct EntryRepr {
-		uint8_t id = 0;
-		uint8_t y = 0;      /// Luminance
-		uint8_t cr = 0;     /// Color Difference Red
-		uint8_t cb = 0;     /// Color Difference Blue
-		uint8_t alpha = 0;  /// Transparency
-	};
 
 	static Segment load_body(SegmentHeader const& header, std::span<uint8_t const> bytes);
 	template<serial::OutputStream S>
@@ -177,16 +155,7 @@ template<>
 struct serial::meta<Segment>;
 
 template<>
-struct serial::meta<PaletteDefinition::EntryRepr>;
-
-template<>
-struct serial::meta<PresentationComposition::CompositionObject::Crop>;
-
-template<>
 struct serial::meta<PresentationComposition::CompositionObject>;
-
-template<>
-struct serial::meta<WindowDefinition::Window>;
 
 }  // namespace pgs
 

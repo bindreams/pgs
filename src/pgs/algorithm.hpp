@@ -15,7 +15,7 @@ struct Subtitle {
 
 std::vector<Subtitle> subtitles(std::ranges::input_range auto&& segments) {
 	// std::unordered_map<int, Subtitle>
-	std::unordered_map<uint8_t, WindowDefinition::Window> windows;
+	std::unordered_map<uint8_t, Rect<uint16_t>> windows;
 	std::unordered_map<uint8_t, PaletteDefinition> palettes;
 	std::unordered_map<uint16_t, ObjectDefinition> objects;
 	std::vector<PresentationComposition::CompositionObject> compositions;
@@ -55,8 +55,8 @@ std::vector<Subtitle> subtitles(std::ranges::input_range auto&& segments) {
 		} else if (any_segment.type() == Segment::Type::WindowDefinition) {
 			auto& segment = std::get<WindowDefinition>(any_segment);
 
-			for (auto& window : segment.windows) {
-				windows.insert_or_assign(window.id, window);
+			for (auto& [id, window] : segment.windows) {
+				windows.insert_or_assign(id, window);
 			}
 		} else if (any_segment.type() == Segment::Type::PaletteDefinition) {
 			auto& segment = std::get<PaletteDefinition>(any_segment);

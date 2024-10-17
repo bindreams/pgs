@@ -13,11 +13,6 @@
 namespace pgs {
 
 template<>
-struct serial::meta<PresentationComposition::CompositionObject::Crop> {
-	static constexpr auto proxy = [](auto& obj) { return std::tie(obj.x, obj.y, obj.width, obj.height); };
-};
-
-template<>
 struct serial::meta<PresentationComposition::CompositionObject> {
 	template<serial::InputStream S>
 	static void load(S& stream, PresentationComposition::CompositionObject& obj, std::endian endianness) {
@@ -33,8 +28,7 @@ struct serial::meta<PresentationComposition::CompositionObject> {
 				std::cerr
 					<< "Warning: subtitle segment has cropped flag set but does not contain the crop information\n";
 			} else {
-				obj.crop = PresentationComposition::CompositionObject::Crop{};
-				serial::load(stream, obj.crop.value(), endianness);
+				obj.crop = serial::load<Rect<uint16_t>>(stream, endianness);
 			}
 		}
 	}
@@ -51,18 +45,6 @@ struct serial::meta<PresentationComposition::CompositionObject> {
 			serial::dump(stream, obj.crop.value(), endianness);
 		}
 	}
-};
-
-template<>
-struct serial::meta<WindowDefinition::Window> {
-	static constexpr auto proxy = [](auto&& window) {
-		return std::tie(window.id, window.x, window.y, window.width, window.height);
-	};
-};
-
-template<>
-struct serial::meta<PaletteDefinition::EntryRepr> {
-	static constexpr auto proxy = [](auto& val) { return std::tie(val.id, val.y, val.cr, val.cb, val.alpha); };
 };
 
 template<>
@@ -226,22 +208,27 @@ inline Segment WindowDefinition::load_body(SegmentHeader const& header, std::spa
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
 
 	auto n_windows = serial::load<uint8_t>(stream);
-	obj.windows.resize(n_windows);
-	for (auto& window : obj.windows) serial::load(stream, window);
+
+	obj.windows.clear();
+	obj.windows.reserve(n_windows);
+	for (int i = 0; i < n_windows; ++i) {
+		uint8_t id = 0;
+		Rect<uint16_t> value;
+
+		serial::load(stream, std::tie(id, value));
+		obj.windows.emplace(id, value);
+	}
 
 	return result;
 }
 
 template<serial::OutputStream S>
 inline void WindowDefinition::dump_body(S& stream) const {
-	if (windows.size() > std::numeric_limits<uint8_t>::max()) {
-		throw PgsWriteError(std::format(
-			"WindowDefinition::dump_body: number of window objects ({}) does not fit into uint8_t", windows.size()
-		));
-	}
-
 	serial::dump(stream, static_cast<uint8_t>(windows.size()));
-	for (auto& window : windows) serial::dump(stream, window);
+	std::vector<std::pair<uint8_t, Rect<uint16_t>>> windows_ordered{std::from_range, windows};
+	std::ranges::sort(windows_ordered, [](auto& lhs, auto& rhs) { return lhs.first < rhs.first; });
+
+	for (auto& [id, rect] : windows_ordered) serial::dump(stream, std::tie(id, rect));
 }
 
 inline Segment PaletteDefinition::load_body(SegmentHeader const& header, std::span<uint8_t const> bytes) {
@@ -252,13 +239,14 @@ inline Segment PaletteDefinition::load_body(SegmentHeader const& header, std::sp
 	auto stream = std::basic_ispanstream<uint8_t>{bytes};
 
 	serial::load(stream, std::tie(obj.id, obj.version));
-	std::size_t n_entries = (bytes.size() - static_cast<std::size_t>(stream.tellg())) / serial::SizeBytes<EntryRepr>;
 
-	obj.clut.reserve(n_entries);
+	obj.clut.clear();
+	while (stream.peek() != EOF) {
+		uint8_t id = 0;
+		colormodels::YCbCrA_BT709 color;
 
-	for (size_t i = 0; i < n_entries; ++i) {
-		auto entry = serial::load<EntryRepr>(stream);
-		obj.clut[entry.id] = {entry.y, entry.cb, entry.cr, entry.alpha};
+		serial::load(stream, std::tie(id, color.y, color.cr, color.cb, color.alpha));
+		obj.clut.emplace(id, color);
 	}
 
 	return result;
@@ -267,16 +255,11 @@ inline Segment PaletteDefinition::load_body(SegmentHeader const& header, std::sp
 template<serial::OutputStream S>
 inline void PaletteDefinition::dump_body(S& stream) const {
 	serial::dump(stream, std::tie(id, version));
-	std::vector<EntryRepr> entries;
-	entries.reserve(clut.size());
 
-	for (auto& [i, color] : clut) {
-		entries.emplace_back(i, color.y, color.cr, color.cb, color.alpha);
-	}
+	std::vector<std::pair<uint8_t, colormodels::YCbCrA_BT709>> clut_ordered{std::from_range, clut};
+	std::ranges::sort(clut_ordered, [](auto& lhs, auto& rhs) { return lhs.first < rhs.first; });
 
-	std::ranges::sort(entries, [](auto& lhs, auto& rhs) { return lhs.id < rhs.id; });
-
-	for (auto& entry : entries) serial::dump(stream, entry);
+	for (auto& [id, color] : clut_ordered) serial::dump(stream, std::tie(id, color.y, color.cr, color.cb, color.alpha));
 }
 
 inline Segment ObjectDefinition::load_body(SegmentHeader const& header, std::span<uint8_t const> bytes) {
