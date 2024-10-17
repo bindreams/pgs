@@ -3,7 +3,7 @@
 
 namespace pgs {
 
-template<typename T = uint8_t>
+template<typename T>
 struct BitmapView {
 	BitmapView(uint16_t width, uint16_t height, uint16_t row_stride, T* begin)
 		: m_data(begin), m_width(width), m_height(height), m_row_stride(row_stride) {}
@@ -64,7 +64,7 @@ private:
 	uint16_t m_row_stride;
 };
 
-template<typename T = uint8_t>
+template<typename T>
 struct Bitmap {
 	Bitmap(uint16_t width, uint16_t height) : m_data(static_cast<std::size_t>(width) * height), m_width(width) {}
 
@@ -120,5 +120,8 @@ private:
 	std::vector<T> m_data;
 	uint16_t m_width;
 };
+
+using ByteBitmap = Bitmap<uint8_t>;
+using ByteBitmapView = BitmapView<uint8_t>;
 
 }  // namespace pgs

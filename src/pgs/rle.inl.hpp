@@ -12,7 +12,7 @@
 
 namespace pgs::rle {
 
-inline Bitmap<uint8_t> decode(std::span<uint8_t const> data) {
+inline ByteBitmap decode(std::span<uint8_t const> data) {
 	if (data.empty()) throw std::runtime_error("data buffer is empty");
 
 	auto width = serial::loads<uint16_t>(data.subspan<0, 2>());

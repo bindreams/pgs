@@ -11,7 +11,7 @@ namespace pgs {
 
 namespace rle {
 
-inline Bitmap<uint8_t> decode(std::span<uint8_t const> data);
+inline ByteBitmap decode(std::span<uint8_t const> data);
 
 template<typename T, typename F>
 inline Bitmap<T> decode(std::span<uint8_t const> data, F&& palette) {
@@ -24,11 +24,11 @@ inline Bitmap<T> decode(std::span<uint8_t const> data, F&& palette) {
 	return Bitmap{indexed.width(), indexed.height(), std::move(result)};
 }
 
-inline std::vector<uint8_t> encode(BitmapView<uint8_t> const& bitmap);
+inline std::vector<uint8_t> encode(ByteBitmapView const& bitmap);
 
 template<typename T, typename F>
-inline std::vector<uint8_t> encode(BitmapView<T> const& bitmap, F&& palette) {
-	Bitmap<uint8_t> indexed{bitmap.width(), bitmap.height()};
+inline std::vector<uint8_t> encode(ByteBitmapView const& bitmap, F&& palette) {
+	ByteBitmap indexed{bitmap.width(), bitmap.height()};
 	std::ranges::transform(bitmap, indexed.begin(), [&](T const& value) { return palette(value); });
 
 	return encode(indexed);
