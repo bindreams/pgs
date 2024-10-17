@@ -1,6 +1,7 @@
 #pragma once
 #include <type_traits>
 
+#include <pgs/utility/generator.hpp>
 #include "traits.hpp"
 
 namespace pgs::serial {
@@ -114,6 +115,11 @@ constexpr void dumps(std::span<B, SizeBytes<T>> bytes, T const& value, std::endi
 	} else {
 		meta<T>::dumps(bytes, value, endianness);
 	}
+}
+
+template<HasMeta T>
+inline generator<T> loaditer(std::istream& stream, std::endian endianness = std::endian::big) {
+	while (stream.peek() != EOF) co_yield load<T>(stream, endianness);
 }
 
 }  // namespace pgs::serial

@@ -36,16 +36,11 @@ void assert_equal(R1&& rng1, R2&& rng2) {
 
 TEST_CASE("roundtrip") {
 	std::ifstream ifs("tests/data/sample-2.sup", std::ios::binary);
-	ifs.exceptions(std::ios::failbit | std::ios::badbit);
 	std::stringstream input;
 	input << ifs.rdbuf();
-	ifs.close();
-
-	std::vector<Segment> segments;
-	while (input.peek() != EOF) segments.push_back(serial::load<Segment>(input));
 
 	std::ostringstream output;
-	for (auto& segment : segments) serial::dump(output, segment);
+	for (auto&& segment : serial::loaditer<Segment>(input)) serial::dump(output, segment);
 
 	assert_equal(input.str(), output.str());
 }
