@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 
 namespace pgs {
@@ -66,10 +67,10 @@ private:
 
 template<typename T>
 struct Bitmap {
-	Bitmap(uint16_t width, uint16_t height) : m_data(static_cast<std::size_t>(width) * height), m_width(width) {}
+	Bitmap(uint16_t width, uint16_t height) : m_data(static_cast<size_t>(width) * height), m_width(width) {}
 
 	Bitmap(uint16_t width, uint16_t height, std::vector<T> data) : m_data(std::move(data)), m_width(width) {
-		assert(m_data.size() == static_cast<std::size_t>(width) * height);
+		assert(m_data.size() == static_cast<size_t>(width) * height);
 	}
 
 	template<std::constructible_from<T> U>
@@ -81,7 +82,7 @@ struct Bitmap {
 	T* data() { return m_data.data(); }
 	T const* data() const { return m_data.data(); }
 
-	std::size_t size() const { return m_data.size(); }
+	size_t size() const { return m_data.size(); }
 	uint16_t width() const { return m_width; }
 	uint16_t height() const { return size() / m_width; }
 

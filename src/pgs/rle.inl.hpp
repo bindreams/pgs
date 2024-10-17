@@ -3,6 +3,8 @@
 #include "serialization.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <iterator>
 #include <span>
@@ -17,13 +19,13 @@ inline ByteBitmap decode(std::span<uint8_t const> data) {
 
 	auto width = serial::loads<uint16_t>(data.subspan<0, 2>());
 	auto height = serial::loads<uint16_t>(data.subspan<2, 2>());
-	auto total_size = static_cast<std::size_t>(width) * height;
+	auto total_size = static_cast<size_t>(width) * height;
 	data = data.subspan(4);
 
 	std::vector<uint8_t> result;
-	result.reserve(std::size_t(width) * height);
+	result.reserve(size_t(width) * height);
 
-	std::size_t row_i = 0;
+	size_t row_i = 0;
 	for (auto iter = data.begin(); iter != data.end(); ++iter, ++row_i) {
 		auto advance = [&]() {
 			++iter;
@@ -112,7 +114,7 @@ inline std::vector<uint8_t> encode(BitmapView<uint8_t> const& bitmap) {
 	serial::dumps(std::span{result}.subspan<0, 2>(), bitmap.width());
 	serial::dumps(std::span{result}.subspan<2, 2>(), bitmap.height());
 
-	for (std::size_t y = 0; y < bitmap.height(); ++y) {
+	for (size_t y = 0; y < bitmap.height(); ++y) {
 		auto row = bitmap.row(y);
 
 		size_t n_same = 0;

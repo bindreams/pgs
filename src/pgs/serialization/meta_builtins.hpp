@@ -1,5 +1,6 @@
 #pragma once
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
@@ -150,7 +151,7 @@ void tuple_for_each(F&& callable, T&& tuple) {
 }
 
 namespace impl {
-template<TupleLike T, std::size_t I = 0>
+template<TupleLike T, size_t I = 0>
 consteval bool each_element_has_constant_size_meta() {
 	if constexpr (I == std::tuple_size_v<T>) {
 		return true;

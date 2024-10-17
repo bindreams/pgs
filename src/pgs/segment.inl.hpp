@@ -2,6 +2,8 @@
 #include "segment.hpp"
 
 #include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <spanstream>
 #include <tuple>
@@ -274,11 +276,11 @@ inline Segment ObjectDefinition::load_body(SegmentHeader const& header, std::spa
 
 	serial::load(stream, std::tie(obj.id, obj.version, obj.sequence_flag, data_size_));
 
-	if (data_size != bytes.size() - static_cast<std::size_t>(stream.tellg()))
+	if (data_size != bytes.size() - static_cast<size_t>(stream.tellg()))
 		throw PgsReadError(std::format(
 			"object definition data length ({}) does not match the remaining size of the segment ({})",
 			data_size,
-			bytes.size() - static_cast<std::size_t>(stream.tellg())
+			bytes.size() - static_cast<size_t>(stream.tellg())
 		));
 
 	obj.data = serial::read_bytes(stream, data_size);
