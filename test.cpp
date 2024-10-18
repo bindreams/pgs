@@ -22,24 +22,18 @@ void main_() {
 	ifs.exceptions(ios::badbit | ios::failbit);
 	ifs.open("test.sup", ios::binary);
 
-	vector<Segment> segments;
-
-	while (ifs.peek() != EOF) {
-		segments.push_back(serial::load<Segment>(ifs));
-	}
-
-	for (auto&& image : subtitles(segments)) {
-		static_assert(sizeof(bg::rgba8_pixel_t) == sizeof(image.bitmap[0, 0]));
+	auto segments = serial::loaditer<Segment>(ifs);
+	auto subs = subtitles(segments);
+	for (auto&& sub : subs) {
+		static_assert(sizeof(bg::rgba8_pixel_t) == sizeof(decltype(sub.bitmap)::value_type));
 
 		auto bitmap_view = bg::interleaved_view(
-			image.bitmap.width(),
-			image.bitmap.height(),
-			reinterpret_cast<bg::rgba8_pixel_t*>(image.bitmap.data()),
-			image.bitmap.width() * 4
+			sub.bitmap.width(),
+			sub.bitmap.height(),
+			reinterpret_cast<bg::rgba8_pixel_t*>(sub.bitmap.data()),
+			sub.bitmap.width() * 4
 		);
-		bg::write_view(
-			std::format("out-{}.png", image.timestamp.time_since_epoch().count()), bitmap_view, bg::png_tag{}
-		);
+		bg::write_view(std::format("out-{}.png", sub.timestamp.time_since_epoch().count()), bitmap_view, bg::png_tag{});
 	}
 }
 

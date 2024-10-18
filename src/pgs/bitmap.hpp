@@ -6,6 +6,8 @@ namespace pgs {
 
 template<typename T>
 struct BitmapView {
+	using value_type = T;
+
 	BitmapView(uint16_t width, uint16_t height, uint16_t row_stride, T* begin)
 		: m_data(begin), m_width(width), m_height(height), m_row_stride(row_stride) {}
 
@@ -67,6 +69,8 @@ private:
 
 template<typename T>
 struct Bitmap {
+	using value_type = T;
+
 	Bitmap(uint16_t width, uint16_t height) : m_data(static_cast<size_t>(width) * height), m_width(width) {}
 
 	Bitmap(uint16_t width, uint16_t height, std::vector<T> data) : m_data(std::move(data)), m_width(width) {

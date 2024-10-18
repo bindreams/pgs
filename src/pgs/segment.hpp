@@ -11,10 +11,6 @@
 
 namespace pgs {
 
-/// PGS stores timestamps as 4-byte integers with 90kHz precision.
-using Duration = std::chrono::duration<uint32_t, std::ratio<1, 90000>>;
-using Timestamp = std::chrono::time_point<std::chrono::steady_clock, Duration>;
-
 struct Segment;
 
 struct SegmentHeader {

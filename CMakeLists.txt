@@ -16,7 +16,7 @@ set_target_properties(libpgs PROPERTIES
 
 include(scripts/cmake/warnings.cmake)
 target_compile_warnings(libpgs INTERFACE
-    GNU all extra pedantic error
+    GNU all extra pedantic error no-error=unknown-attributes
     MSVC 4 X
 )
 
