@@ -2,6 +2,9 @@
 .idea
 .vscode
 
+# CMake
+CMakeUserPresets.json
+
 # Build artifacts
 build
 .vcpkg
