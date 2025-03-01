@@ -1,4 +1,5 @@
 #pragma once
+#include <bit>
 #include <type_traits>
 
 #include <pgs/utility.hpp>
