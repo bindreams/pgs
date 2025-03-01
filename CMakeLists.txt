@@ -20,18 +20,6 @@ target_compile_warnings(libpgs INTERFACE
     MSVC 4 X
 )
 
-add_executable(test test.cpp)
-target_link_libraries(test PRIVATE libpgs)
-
-find_package(Boost REQUIRED COMPONENTS gil)
-find_package(ZLIB REQUIRED)
-target_link_libraries(Boost::gil INTERFACE PNG::PNG)
-
-find_package(PNG REQUIRED)
-target_link_libraries(Boost::gil INTERFACE ZLIB::ZLIB)
-
-target_link_libraries(test PRIVATE Boost::gil)
-
 install(TARGETS libpgs)
 
 
@@ -46,3 +34,16 @@ set(DOCTEST_NO_INSTALL OFF CACHE INTERNAL "")
 
 find_package(doctest CONFIG REQUIRED)
 target_link_libraries(pgs_tests PRIVATE libpgs doctest::doctest)
+
+# Test executable ======================================================================================================
+add_executable(test test.cpp)
+target_link_libraries(test PRIVATE libpgs)
+
+find_package(Boost REQUIRED COMPONENTS gil)
+find_package(ZLIB REQUIRED)
+target_link_libraries(Boost::gil INTERFACE PNG::PNG)
+
+find_package(PNG REQUIRED)
+target_link_libraries(Boost::gil INTERFACE ZLIB::ZLIB)
+
+target_link_libraries(test PRIVATE Boost::gil)
