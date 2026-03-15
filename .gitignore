@@ -1,14 +1,13 @@
-# IDE folders
-.idea
-.vscode
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
 
-# CMake
-CMakeUserPresets.json
+# Rust build artifacts
+/target
 
-# Build artifacts
-build
-dist
-.vcpkg
-
-# Script run results
-.png
+# Claude Code
+CLAUDE.local.md
+.claude/*.local.*

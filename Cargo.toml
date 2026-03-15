@@ -1,0 +1,22 @@
+[package]
+name = "pgs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Read PGS (Presentation Graphic Stream) subtitles from Blu-ray discs"
+license = "MIT"
+
+[lib]
+harness = false
+
+[dependencies]
+thiserror = "2"
+bitflags = "2"
+
+[dev-dependencies]
+skuld = { git = "https://github.com/bindreams/skuld" }
+
+[[test]]
+name = "read"
+path = "tests/read.rs"
+harness = false
