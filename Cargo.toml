@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Read PGS (Presentation Graphic Stream) subtitles from Blu-ray discs"
-license = "MIT"
+license = "MPL-2.0"
 
 [lib]
 harness = false
