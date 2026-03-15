@@ -1,6 +1,7 @@
 :::\{toctree}
 :hidden:
 API Overview \<api-overview.md>
+Python Bindings \<python.md>
 PGS Format \<pgs-format.md>
 RLE Encoding \<rle-encoding.md>
 Color Conversion \<color-conversion.md>
@@ -15,6 +16,9 @@ Read PGS (Presentation Graphic Stream) subtitles from Blu-ray discs.
 
 ## Quick start
 
+::::\{tab-set}
+:::\{tab-item} Rust
+
 ```rust
 use std::fs::File;
 use pgs::SupReader;
@@ -25,6 +29,19 @@ for subtitle in reader.subtitles() {
     println!("{}x{} at ({},{})", sub.bitmap.width(), sub.bitmap.height(), sub.x, sub.y);
 }
 ```
+
+:::
+:::\{tab-item} Python
+
+```python
+import pgs
+
+for sub in pgs.open("subtitles.sup").subtitles():
+    print(f"{sub.bitmap.width}x{sub.bitmap.height} at ({sub.x},{sub.y})")
+```
+
+:::
+::::
 
 ## Iteration levels
 
