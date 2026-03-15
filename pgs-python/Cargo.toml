@@ -1,0 +1,14 @@
+[package]
+name = "pgs-python"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[lib]
+name = "pgs_python"
+crate-type = ["cdylib"]
+
+[dependencies]
+pgs = { path = ".." }
+pyo3 = { version = "0.24", features = ["extension-module"] }
